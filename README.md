@@ -51,9 +51,18 @@ Powered by an **interactive 3D isometric office with 12 autonomous AI agents**, 
 - **Resolution Selector**: Choose from 1080p, 720p, 480p, or best available format.
 - **Smart Fixes**: Automatic IPv4 forcing and JS runtime fallbacks for instant download initiation.
 
-### 🤖 7. Nova Copilot & Floating Island
-- **Desktop Dynamic Dock**: Minimalist floating island overlay with voice synthesis and quick status notifications.
-- **Error Resilience**: Instant dismissals, retry handlers, and intelligent agent status monitoring.
+### 🤖 7. Interactive NOVA Copilot & Living Emotional Avatar
+<div align="center">
+  <img src="docs/assets/nova_emotions.jpg" alt="NOVA Interactive Emotion Expressions" width="720" style="border-radius: 16px; margin: 12px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.6);" />
+</div>
+
+- **Physics-Based Gaze Tracking (Spring-Damper LERP)**: NOVA's robotic pupils and head tilt follow your mouse cursor smoothly across the entire screen.
+- **Poke & Annoyance Engine**:
+  - **1-2 Pokes**: Happy smile (`^_^`), playful neon cyan glow & friendly voice greetings.
+  - **3-4 Pokes**: Irritated side-eye (`ಠ_ಠ`), amber warning aura & witty protests (*"Working here boss, stop tickling!"*).
+  - **6+ Pokes**: Furious flaming eyebrows (`>_<`), red glitch vibration, screen shake & fiery vocal outbursts.
+- **Dizzy & Sleep States**: Rapidly shaking your cursor triggers dizzy swirling eyes (`@_@`), while 45s of user inactivity puts NOVA into a soft glowing snooze with `Zzz` floating bubbles.
+- **Desktop Dynamic Dock**: Minimalist floating island overlay with voice synthesis, 5-stage progress pipeline tree, and instant error dismissals.
 
 ---
 

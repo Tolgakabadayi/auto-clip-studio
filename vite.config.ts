@@ -17,6 +17,20 @@ function copyPreloadPlugin(): Plugin {
         fs.copyFileSync(src, dest);
       }
     }
+    const copyDir = (srcDir: string, destDir: string) => {
+      if (!fs.existsSync(srcDir)) return;
+      fs.mkdirSync(destDir, { recursive: true });
+      for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+        const s = path.join(srcDir, entry.name);
+        const d = path.join(destDir, entry.name);
+        if (entry.isDirectory()) {
+          copyDir(s, d);
+        } else {
+          fs.copyFileSync(s, d);
+        }
+      }
+    };
+    copyDir(path.resolve(__dirname, 'electron/python'), path.resolve(__dirname, 'dist-electron/python'));
   };
   return {
     name: 'copy-preload-cjs',

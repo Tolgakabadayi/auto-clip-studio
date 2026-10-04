@@ -17,15 +17,25 @@ export class WhisperService {
     this.pythonPath = this.detectPython();
     // Derive directory from this file's location (works in both dev and built ESM)
     const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const resourcesPath = (process as any).resourcesPath;
     const candidatePaths = [
-      path.resolve(thisDir, 'python', 'transcribe.py'),           // dist-electron/services/ -> dist-electron/python/
-      path.resolve(thisDir, '..', 'python', 'transcribe.py'),     // dist-electron/services/ -> dist-electron/../electron/python/
+      // 1. Packaged Electron extraResources
+      resourcesPath ? path.join(resourcesPath, 'python', 'transcribe.py') : null,
+      resourcesPath ? path.join(resourcesPath, 'electron', 'python', 'transcribe.py') : null,
+      // 2. Relative to dist-electron
+      path.resolve(thisDir, 'python', 'transcribe.py'),
+      path.resolve(thisDir, '..', 'python', 'transcribe.py'),
       path.resolve(thisDir, '..', 'electron', 'python', 'transcribe.py'),
+      // 3. Process cwd candidates (dev mode or unpacked root)
+      path.resolve(process.cwd(), 'resources', 'python', 'transcribe.py'),
       path.resolve(process.cwd(), 'electron', 'python', 'transcribe.py'),
       path.resolve(process.cwd(), 'dist-electron', 'python', 'transcribe.py'),
-    ];
-    this.scriptPath = candidatePaths.find(p => fs.existsSync(p)) || candidatePaths[3];
-    console.log(`[WhisperService] Script path: ${this.scriptPath} (exists: ${fs.existsSync(this.scriptPath)})`);
+      path.resolve(process.cwd(), '..', 'electron', 'python', 'transcribe.py'),
+    ].filter(Boolean) as string[];
+
+    const found = candidatePaths.find(p => fs.existsSync(p));
+    this.scriptPath = found || (resourcesPath ? path.join(resourcesPath, 'python', 'transcribe.py') : candidatePaths[0]);
+    console.log(`[WhisperService] Script path resolved to: ${this.scriptPath} (exists: ${fs.existsSync(this.scriptPath)})`);
   }
 
   public cancel(): void {

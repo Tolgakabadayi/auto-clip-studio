@@ -57,6 +57,12 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "electron/python",
+        "to": "python"
+      }
+    ],
     "asar": true,
     "icon": "build/icon.ico",
     "win": {

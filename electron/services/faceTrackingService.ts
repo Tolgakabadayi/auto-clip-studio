@@ -22,15 +22,25 @@ export class FaceTrackingService {
   constructor() {
     this.pythonPath = this.detectPython();
     const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const resourcesPath = (process as any).resourcesPath;
     const candidatePaths = [
+      // 1. Packaged Electron extraResources
+      resourcesPath ? path.join(resourcesPath, 'python', 'track_face.py') : null,
+      resourcesPath ? path.join(resourcesPath, 'electron', 'python', 'track_face.py') : null,
+      // 2. Relative to dist-electron
       path.resolve(thisDir, 'python', 'track_face.py'),
       path.resolve(thisDir, '..', 'python', 'track_face.py'),
       path.resolve(thisDir, '..', 'electron', 'python', 'track_face.py'),
+      // 3. Process cwd candidates (dev mode or unpacked root)
+      path.resolve(process.cwd(), 'resources', 'python', 'track_face.py'),
       path.resolve(process.cwd(), 'electron', 'python', 'track_face.py'),
       path.resolve(process.cwd(), 'dist-electron', 'python', 'track_face.py'),
-    ];
-    this.scriptPath = candidatePaths.find((p) => fs.existsSync(p)) || candidatePaths[3];
-    console.log(`[FaceTrackingService] Script path: ${this.scriptPath} (exists: ${fs.existsSync(this.scriptPath)})`);
+      path.resolve(process.cwd(), '..', 'electron', 'python', 'track_face.py'),
+    ].filter(Boolean) as string[];
+
+    const found = candidatePaths.find((p) => fs.existsSync(p));
+    this.scriptPath = found || (resourcesPath ? path.join(resourcesPath, 'python', 'track_face.py') : candidatePaths[0]);
+    console.log(`[FaceTrackingService] Script path resolved to: ${this.scriptPath} (exists: ${fs.existsSync(this.scriptPath)})`);
   }
 
   private detectPython(): string {

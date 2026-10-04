@@ -1,0 +1,87 @@
+{
+  "name": "auto-clip-studio",
+  "version": "1.0.0",
+  "description": "Yerel Yapay Zeka Destekli Otomatik Video Editör ve Shorts/Reels Klip Üreticisi",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "vite",
+    "electron:build": "tsc && vite build && electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "react",
+    "vite",
+    "whisper",
+    "ffmpeg",
+    "video-editor",
+    "shorts",
+    "reels",
+    "ai-clipping"
+  ],
+  "author": "AutoClip AI",
+  "license": "MIT",
+  "dependencies": {
+    "@tweenjs/tween.js": "^25.0.0",
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.autoclip.studio",
+    "productName": "AutoClip Studio AI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "asar": true,
+    "icon": "build/icon.ico",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AutoClip Studio AI"
+    }
+  }
+}

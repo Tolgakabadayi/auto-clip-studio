@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Production & Build outputs
+dist/
+dist-electron/
+release/
+build/*.exe
+build/*.blockmap
+
+# Environment & Sensitive configs
+.env
+.env.*
+!.env.example
+
+# Temporary media & Download caches
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.mp3
+*.part
+*.ytdl
+AutoClip_Downloads/
+downloads/
+temp/
+tmp/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Operating System files
+Thumbs.db
+.DS_Store
+Desktop.ini
+*.lnk
+
+# Editor directories
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

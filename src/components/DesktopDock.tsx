@@ -28,6 +28,7 @@ import {
   AutopilotState
 } from '../types';
 import { novaVoice } from '../utils/novaVoice';
+import { NovaInteractiveAvatar } from './NovaInteractiveAvatar';
 
 export const DesktopDock: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -314,13 +315,12 @@ export const DesktopDock: React.FC = () => {
         >
           {/* Left: Cyber Robot Head Visor with Eyes */}
           <div className="flex items-center space-x-2.5 shrink-0">
-            <RobotVisor
-              mood={currentSpeech.mood}
-              isBlinking={isBlinking}
-              gazeDirection={gazeDirection}
+            <NovaInteractiveAvatar
+              size="sm"
+              externalMood={currentSpeech.mood}
               isBusy={isBusy}
               isSpeaking={isSpeakingVoice}
-              size="sm"
+              enableVoiceReactions={!isMuted}
             />
             <span className="text-[11px] font-black tracking-wider text-brand-cyan flex items-center gap-1 uppercase">
               NOVA
@@ -364,13 +364,12 @@ export const DesktopDock: React.FC = () => {
               
               {/* Left Side: Large Prominent Cyber Robot Face */}
               <div className="w-[185px] shrink-0 border-r border-dark-750/80 pr-4 flex flex-col items-center justify-center text-center bg-[#090a18] rounded-2xl p-2.5">
-                <RobotVisor
-                  mood={currentSpeech.mood}
-                  isBlinking={isBlinking}
-                  gazeDirection={gazeDirection}
+                <NovaInteractiveAvatar
+                  size="xl"
+                  externalMood={currentSpeech.mood}
                   isBusy={true}
                   isSpeaking={isSpeakingVoice}
-                  size="lg"
+                  enableVoiceReactions={!isMuted}
                 />
 
                 <div className="mt-2.5 space-y-1">
@@ -551,13 +550,12 @@ export const DesktopDock: React.FC = () => {
               {/* Top Bar: Identity, Visor Eyes & Controls */}
               <div className="flex items-center justify-between border-b border-dark-750 pb-2">
                 <div className="flex items-center space-x-3">
-                  <RobotVisor
-                    mood={currentSpeech.mood}
-                    isBlinking={isBlinking}
-                    gazeDirection={gazeDirection}
+                  <NovaInteractiveAvatar
+                    size="md"
+                    externalMood={currentSpeech.mood}
                     isBusy={false}
                     isSpeaking={isSpeakingVoice}
-                    size="md"
+                    enableVoiceReactions={!isMuted}
                   />
                   <div>
                     <div className="flex items-center space-x-2">

@@ -31,6 +31,7 @@ import {
   AgencyMessage
 } from '../types';
 import { novaVoice } from '../utils/novaVoice';
+import { NovaInteractiveAvatar } from './NovaInteractiveAvatar';
 
 interface CopilotWidgetProps {
   pipelineProgress: PipelineProgress;
@@ -465,57 +466,46 @@ export const CopilotWidget: React.FC<CopilotWidgetProps> = ({
             </div>
           )}
 
-          {/* Interactive Bot Avatar Head */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(!isOpen);
-              if (!isMuted) setIsSpeechVisible(true);
-            }}
-            className={`relative group w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-2xl active:scale-95 ${
-              isOpen
-                ? 'bg-gradient-to-tr from-brand-purple to-purple-600 ring-4 ring-brand-purple/40 shadow-brand-purple/50 scale-105'
-                : 'bg-gradient-to-tr from-dark-900 via-dark-850 to-brand-purple/30 border border-brand-purple/40 hover:border-brand-purple ring-2 ring-brand-purple/20 shadow-black/80 hover:scale-105'
-            }`}
-            title="Stüdyo Baş Danışmanı NOVA ile Konuş"
-          >
-            {/* Animated Holographic Outer Rings */}
-            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-brand-purple via-brand-cyan to-amber-500 opacity-40 group-hover:opacity-100 blur-sm transition-all duration-500 animate-pulse" />
+          {/* Interactive Nova Avatar with Physics Eye-Tracking & Emotion System */}
+          <div className="relative group/nova">
+            <NovaInteractiveAvatar
+              size="lg"
+              externalMood={currentSpeech.mood}
+              isSpeaking={isSpeakingVoice}
+              isBusy={pipelineProgress?.step !== 'completed' && pipelineProgress?.step !== 'idle'}
+              onOpenChat={() => {
+                setIsOpen(!isOpen);
+                if (!isMuted) setIsSpeechVisible(true);
+              }}
+              enableVoiceReactions={!isMuted}
+            />
 
-            {/* Robot / Avatar Body */}
-            <div className={`relative w-12 h-12 rounded-xl bg-dark-950 flex flex-col items-center justify-center overflow-hidden shadow-inner transition-colors ${
-              isSpeakingVoice ? 'border-2 border-emerald-400 shadow-emerald-500/30' : 'border border-brand-purple/50'
-            }`}>
-              {/* Holographic Visor / Face */}
-              <div className={`w-9 h-5 rounded-md bg-dark-900 flex items-center justify-center space-x-1.5 relative overflow-hidden transition-colors ${
-                isSpeakingVoice ? 'border border-emerald-400/80 shadow-sm shadow-emerald-400/30' : 'border border-cyan-500/40'
-              }`}>
-                {/* Animated Eyes */}
-                <div className={`w-1.5 h-2.5 rounded-full transition-colors ${
-                  isSpeakingVoice ? 'bg-emerald-300 shadow-sm shadow-emerald-300 animate-bounce' : 'bg-brand-cyan shadow-sm shadow-brand-cyan animate-pulse'
-                }`} />
-                <div className={`w-1.5 h-2.5 rounded-full transition-colors ${
-                  isSpeakingVoice ? 'bg-emerald-300 shadow-sm shadow-emerald-300 animate-bounce' : 'bg-brand-cyan shadow-sm shadow-brand-cyan animate-pulse'
-                }`} />
-                {/* Scanline reflection */}
-                <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-              </div>
-
-              {/* Speaking / Audio Equalizer Bars */}
-              <div className="flex items-center space-x-0.5 mt-1">
-                <span className={`w-1 rounded-full ${isSpeakingVoice ? 'bg-emerald-400 h-2.5 animate-pulse' : 'bg-brand-purple h-1.5 animate-bounce'}`} style={{ animationDelay: '0ms' }} />
-                <span className={`w-1 rounded-full ${isSpeakingVoice ? 'bg-cyan-300 h-3 animate-pulse' : 'bg-brand-cyan h-2 animate-bounce'}`} style={{ animationDelay: '150ms' }} />
-                <span className={`w-1 rounded-full ${isSpeakingVoice ? 'bg-emerald-400 h-2 animate-pulse' : 'bg-amber-400 h-1 animate-bounce'}`} style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-
-            {/* Status indicator badge */}
-            <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-dark-950 flex items-center justify-center shadow-md ${
-              isSpeakingVoice ? 'bg-emerald-400 ring-2 ring-emerald-400/50' : isMuted ? 'bg-amber-500' : 'bg-brand-cyan'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${isSpeakingVoice ? 'bg-white animate-ping' : isMuted ? 'bg-amber-200' : 'bg-white'}`} />
-            </span>
-          </button>
+            {/* Quick Open Console Button on Hover / Status Badge */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(!isOpen);
+                if (!isMuted) setIsSpeechVisible(true);
+              }}
+              className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full border-2 border-dark-950 flex items-center justify-center shadow-md transition-transform hover:scale-110 ${
+                isOpen
+                  ? 'bg-brand-purple text-white'
+                  : isSpeakingVoice
+                  ? 'bg-emerald-400 ring-2 ring-emerald-400/50'
+                  : isMuted
+                  ? 'bg-amber-500'
+                  : 'bg-brand-cyan'
+              }`}
+              title={isOpen ? 'Paneli Kapat' : 'Danışman Panelini Aç'}
+            >
+              {isOpen ? (
+                <X className="w-3 h-3 text-white" />
+              ) : (
+                <span className={`w-2 h-2 rounded-full ${isSpeakingVoice ? 'bg-white animate-ping' : isMuted ? 'bg-amber-200' : 'bg-white'}`} />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* 3. Interactive Full Command Console / Chat Modal */}

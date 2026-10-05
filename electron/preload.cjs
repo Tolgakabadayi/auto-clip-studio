@@ -129,6 +129,8 @@ const electronAPI = {
     ipcRenderer.on('youtube-upload:progress', subscription);
     return () => ipcRenderer.removeListener('youtube-upload:progress', subscription);
   },
+  openWarRoomWindow: () => ipcRenderer.invoke('window:open-war-room'),
+  closeWarRoomWindow: () => ipcRenderer.invoke('window:close-war-room'),
   onClipUploaded: (callback) => {
     const subscription = (_event, value) => callback(value);
     ipcRenderer.on('clip:uploaded', subscription);

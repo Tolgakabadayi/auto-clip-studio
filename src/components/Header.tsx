@@ -112,6 +112,22 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Top Header Actions */}
       <div className="flex items-center space-x-3 text-xs">
+        {/* ⚡ NEXUS WAR ROOM Trigger */}
+        {onOpenAgencyRoom && (
+          <button
+            onClick={onOpenAgencyRoom}
+            className="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-brand-purple/20 via-indigo-600/20 to-brand-cyan/20 border border-brand-purple/40 text-brand-purple hover:text-white hover:border-brand-purple transition-all shadow-sm"
+            title="⚡ NEXUS WAR ROOM: 14 Ajanlı Canlı Operasyon & YouTube Scoreboard"
+          >
+            <Bot className="w-3.5 h-3.5 text-brand-purple animate-pulse" />
+            <span className="font-bold text-[11px] tracking-wide">⚡ NEXUS WAR ROOM</span>
+            {agencyMessageCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-brand-purple text-white text-[9px] font-black font-mono">
+                {agencyMessageCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {onSwapPanels && !isLayoutLocked && (
           <button

@@ -23,17 +23,19 @@ interface Office3DViewportProps {
   onSelectAgent?: (role: AgencyRole) => void;
   onRunMeeting?: () => void;
   hasVideo?: boolean;
+  youtubeAnalytics?: any;
 }
 
 export const Office3DViewport: React.FC<Office3DViewportProps> = ({
   activeAgentRole,
-  activeWorkMessage = '12 Ajan masalarında hazır bekliyor.',
+  activeWorkMessage = '14 Ajan operasyon masalarında hazır bekliyor.',
   activePercent = 0,
   elapsedSeconds = 0,
   isProcessing = false,
   onSelectAgent,
   onRunMeeting,
   hasVideo = true,
+  youtubeAnalytics,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const office3dRef = useRef<IsometricOffice3D | null>(null);
@@ -89,6 +91,20 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
       office3dRef.current = null;
     };
   }, []);
+
+  // Update 3D Wall Scoreboard when analytics arrive
+  useEffect(() => {
+    if (!office3dRef.current || !youtubeAnalytics) return;
+    office3dRef.current.updateScoreboardStats({
+      totalViews: youtubeAnalytics.totalViews,
+      subscriberCount: youtubeAnalytics.subscriberCount,
+      totalVideos: youtubeAnalytics.totalVideos,
+      nextScheduled: youtubeAnalytics.nextScheduledUpload
+        ? `${youtubeAnalytics.nextScheduledUpload.time || ''} (${youtubeAnalytics.nextScheduledUpload.dayLabel || 'Planlandı'})`
+        : undefined,
+      monetizationStatus: 'GÜVENLİ (%100)',
+    });
+  }, [youtubeAnalytics]);
 
   // Matching active agent meta
   const activeAgentInfo = useMemo(() => {

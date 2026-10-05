@@ -348,6 +348,25 @@ export class AutopilotService {
           continue;
         }
 
+        const channelName = (item.uploader || item.channel || '').toLowerCase();
+        const descText = (item.description || '').toLowerCase();
+
+        // 🛡️ COPYRIGHT & MONETIZATION SHIELD: Filter out risky networks & Content ID claims
+        const riskyNetworks = ['vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner bros'];
+        if (riskyNetworks.some((r) => channelName.includes(r))) {
+          continue;
+        }
+
+        if (
+          descText.includes('provided to youtube by') ||
+          descText.includes('music in this video') ||
+          descText.includes('sound recording administered by') ||
+          descText.includes('universal music group') ||
+          descText.includes('sony music')
+        ) {
+          continue;
+        }
+
         // Format duration mm:ss or hh:mm:ss
         const mins = Math.floor(duration / 60);
         const secs = Math.floor(duration % 60);
@@ -720,6 +739,11 @@ export class AutopilotService {
         onLog: this.onLog,
       }
     );
+
+    if (!auditResult.approved) {
+      this.emitLog(`❌ [Telif Kalkanı Reddi]: "${targetVideo.title}" elendi: ${auditResult.notes}`);
+      throw new Error(`Telif Kalkanı Reddi: ${auditResult.notes}`);
+    }
 
     // STEP 3: DOWNLOAD VIDEO
     this.state.activeAgent = 'trend_hunter';

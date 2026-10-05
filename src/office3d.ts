@@ -256,6 +256,42 @@ export const AGENTS_3D_ROSTER: Omit<Agent3DMeta, 'deskPos' | 'deskRotationY' | '
       meeting: 'Küresel başlık ve altyazılar tamamlandı. Video dünya çapında keşfete açık.',
     },
   },
+
+  // STRATEGIC DIRECTORS AT CENTRAL WAR ROOM TABLE
+  {
+    id: 'security_supervisor',
+    role: 'security_supervisor',
+    name: 'Sentinel Guard',
+    avatar: '🛡️',
+    pod: 1,
+    podIndex: 6,
+    model: 'qwen3:8b',
+    department: 'Merkezi Güvenlik & Teftiş',
+    title: 'Baş Güvenlik & Telif Denetçisi',
+    accentColor: 0x6366f1,
+    liveQuote: {
+      idle: 'Merkezi masadayım. Telif kalkanı ve sahte Creative Commons filtreleri devrede.',
+      working: 'Telif haklarını, Content ID müziklerini ve video bütünlüğünü denetliyorum. Sıfır tolerans.',
+      meeting: 'Strateji masasındayım. Lisans ve monetizasyon güvenliği %100 onaylandı.',
+    },
+  },
+  {
+    id: 'youtube_manager',
+    role: 'youtube_manager',
+    name: 'Atlas Partner',
+    avatar: '🔴',
+    pod: 2,
+    podIndex: 6,
+    model: 'qwen3:8b',
+    department: 'YouTube Partner & Analitik',
+    title: 'YouTube Kanal & Büyüme Müdürü',
+    accentColor: 0xf43f5e,
+    liveQuote: {
+      idle: 'Canlı analitik masasında yayın yuvalarını ve kanal izlenme ivmesini izliyorum.',
+      working: 'YouTube Data API üzerinden toplam izlenme, Shorts etkileşimleri ve CTR verilerini çekiyorum...',
+      meeting: 'Strateji masasındayım. Son yüklenen Shorts analizi ve sıradaki yayın yuvası planlandı.',
+    },
+  },
 ];
 
 export interface Office3DOptions {
@@ -343,6 +379,7 @@ export class IsometricOffice3D {
     // 5. Build High-Detail Realistic Architecture
     this.initLights();
     this.initOfficeArchitecture();
+    this.initScoreboardDisplay();
     this.initCentralStrategyTable();
     this.init12AgentWorkstations();
 
@@ -648,18 +685,242 @@ export class IsometricOffice3D {
     tableGroup.add(this.hologramRing);
 
     // 6. Holographic Strategy Table Label
-    const tableBadge = this.createLabelSprite('👑 BÜYÜK STRATEJİ MASASI', '', '#8b5cf6', 3.2, 0.65, 'AI WAR ROOM');
+    const tableBadge = this.createLabelSprite('⚡ NEXUS COMMAND', '', '#8b5cf6', 3.2, 0.65, 'AI WAR ROOM HQ');
     tableBadge.position.set(0, 2.75, 0);
     tableGroup.add(tableBadge);
 
     this.scene.add(tableGroup);
   }
 
+  private scoreboardTexture?: THREE.CanvasTexture;
+  private scoreboardScreenMesh?: THREE.Mesh;
+
   /**
-   * Initializes 12 Desks and Characters across Pod 1 (Sol) and Pod 2 (Sağ)
+   * Builds the High-Tech Cyber Scoreboard TV on the back wall for live YouTube metrics
+   */
+  private initScoreboardDisplay(): void {
+    const scoreboardGroup = new THREE.Group();
+    scoreboardGroup.position.set(0, 3.8, -10.2);
+
+    // 1. Heavy Cyber Bezel & Chassis
+    const chassisGeo = new THREE.BoxGeometry(9.6, 4.2, 0.25);
+    const chassisMat = new THREE.MeshStandardMaterial({
+      color: 0x070913,
+      metalness: 0.85,
+      roughness: 0.25,
+    });
+    const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+    chassis.castShadow = true;
+    scoreboardGroup.add(chassis);
+
+    // 2. Neon Red/Rose Edge Glow Trim
+    const trimGeo = new THREE.BoxGeometry(9.68, 4.28, 0.04);
+    const trimMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const trim = new THREE.Mesh(trimGeo, trimMat);
+    trim.position.z = 0.05;
+    scoreboardGroup.add(trim);
+
+    // 3. Screen Canvas & Texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    this.renderScoreboardCanvas(canvas, {
+      totalViews: 1420500,
+      subscriberCount: 48500,
+      totalVideos: 24,
+      nextScheduled: '18:30 (12 dk kaldı)',
+      monetizationStatus: 'GÜVENLİ (%100)',
+    });
+
+    this.scoreboardTexture = new THREE.CanvasTexture(canvas);
+    this.scoreboardTexture.minFilter = THREE.LinearFilter;
+
+    const screenGeo = new THREE.PlaneGeometry(9.4, 4.0);
+    const screenMat = new THREE.MeshBasicMaterial({
+      map: this.scoreboardTexture,
+      toneMapped: false,
+    });
+    this.scoreboardScreenMesh = new THREE.Mesh(screenGeo, screenMat);
+    this.scoreboardScreenMesh.position.z = 0.14;
+    scoreboardGroup.add(this.scoreboardScreenMesh);
+
+    // 4. Click HitBox on the Screen (Selecting youtube_manager opens YouTube Analytics Suite!)
+    const hitGeo = new THREE.BoxGeometry(9.4, 4.0, 0.6);
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    const hitBox = new THREE.Mesh(hitGeo, hitMat);
+    hitBox.position.z = 0.2;
+    hitBox.userData = { agentId: 'youtube_manager', isScoreboard: true };
+    scoreboardGroup.add(hitBox);
+
+    // 5. Ambient Cyber Neon Spot Light onto the room
+    const tvLight = new THREE.PointLight(0xf43f5e, 2.2, 10, 1.8);
+    tvLight.position.set(0, 0, 1.2);
+    scoreboardGroup.add(tvLight);
+
+    this.scene.add(scoreboardGroup);
+  }
+
+  /**
+   * Draws dynamic high-resolution scoreboard graphics onto HTML Canvas
+   */
+  private renderScoreboardCanvas(
+    canvas: HTMLCanvasElement,
+    stats: {
+      totalViews?: number;
+      subscriberCount?: number;
+      totalVideos?: number;
+      nextScheduled?: string;
+      monetizationStatus?: string;
+    }
+  ): void {
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background Gradient (Cyber Black to Deep Red/Purple)
+    const bgGrad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    bgGrad.addColorStop(0, '#090a14');
+    bgGrad.addColorStop(0.5, '#0f1122');
+    bgGrad.addColorStop(1, '#1a0d1e');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Digital Grid Lines
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.12)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += 32) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+
+    // Top Header Banner
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+    ctx.fillRect(0, 0, canvas.width, 74);
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, canvas.width, 74);
+
+    ctx.font = 'bold 30px "Inter", "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔴 YOUTUBE PARTNER CANLI SCOREBOARD', 32, 38);
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#34d399';
+    ctx.fillText('● 24/7 OTOMATİK YAYIN AKTİF', canvas.width - 32, 38);
+
+    // 4 Score Cards (Views, Subs, Videos, Monetization)
+    const cards = [
+      {
+        label: 'TOPLAM İZLENME',
+        value: stats.totalViews ? stats.totalViews.toLocaleString('tr-TR') : '1,420,500',
+        color: '#f43f5e',
+        badge: '+18.4% İvme',
+      },
+      {
+        label: 'ABONE SAYISI',
+        value: stats.subscriberCount ? stats.subscriberCount.toLocaleString('tr-TR') : '48,500',
+        color: '#38bdf8',
+        badge: 'Canlı Büyüme',
+      },
+      {
+        label: 'YÜKLENEN SHORTS',
+        value: stats.totalVideos ? `${stats.totalVideos} Video` : '24 Video',
+        color: '#fbbf24',
+        badge: 'Otomatik Üretim',
+      },
+      {
+        label: 'TELİF & MONETİZASYON',
+        value: stats.monetizationStatus || 'GÜVENLİ (%100)',
+        color: '#10b981',
+        badge: 'CC-BY Lisanslı',
+      },
+    ];
+
+    const cardW = 220;
+    const cardH = 160;
+    const startX = 36;
+    const gapX = 26;
+    const cardY = 100;
+
+    cards.forEach((c, idx) => {
+      const x = startX + idx * (cardW + gapX);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(x, cardY, cardW, cardH, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 16px "Inter", sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(c.label, x + 16, cardY + 32);
+
+      ctx.font = 'bold 26px "Inter", sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(c.value, x + 16, cardY + 78);
+
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = c.color;
+      ctx.fillText(c.badge, x + 16, cardY + 124);
+    });
+
+    // Bottom Status Strip
+    const bottomY = 290;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(startX, bottomY, canvas.width - startX * 2, 140, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 20px "Inter", sans-serif';
+    ctx.fillStyle = '#fde047';
+    ctx.fillText('⏱️ SIRADAKİ OTOPİLOT YAYINI:', startX + 24, bottomY + 45);
+
+    ctx.font = 'bold 22px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(stats.nextScheduled || '18:30 (10 dk öncesinde otonom üretim başlar)', startX + 340, bottomY + 45);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 18px "Inter", sans-serif';
+    ctx.fillStyle = '#67e8f9';
+    ctx.fillText('👉 DETAYLI KANAL VE VİDEO ANALİZLERİNİ AÇMAK İÇİN BU EKRANA TIKLAYIN', canvas.width / 2, bottomY + 102);
+  }
+
+  /**
+   * Updates scoreboard texture when new real analytics arrive
+   */
+  public updateScoreboardStats(stats: {
+    totalViews?: number;
+    subscriberCount?: number;
+    totalVideos?: number;
+    nextScheduled?: string;
+    monetizationStatus?: string;
+  }): void {
+    if (!this.scoreboardTexture || !this.scoreboardTexture.image) return;
+    this.renderScoreboardCanvas(this.scoreboardTexture.image, stats);
+    this.scoreboardTexture.needsUpdate = true;
+  }
+
+  /**
+   * Initializes 14 Desks and Characters across Pod 1, Pod 2, and Central Table
    */
   private init12AgentWorkstations(): void {
-    const totalAgents = AGENTS_3D_ROSTER.length; // 12
+    const totalAgents = AGENTS_3D_ROSTER.length; // 14
     const meetingRadius = 3.2; // Tightly framing the center strategy table
 
     AGENTS_3D_ROSTER.forEach((baseMeta, index) => {
@@ -672,9 +933,19 @@ export class IsometricOffice3D {
       const row = Math.floor(baseMeta.podIndex / 2); // 0, 1, 2
 
       const zOffsets = [-3.8, 0.0, 3.8];
-      const zPos = zOffsets[row];
+      const zPos = zOffsets[row] || 0.0;
 
-      if (isPod1) {
+      if (baseMeta.id === 'security_supervisor') {
+        // Stationed right at Central Table (West side)
+        deskX = -2.7;
+        deskZ = 0.0;
+        deskRotY = Math.PI / 2;
+      } else if (baseMeta.id === 'youtube_manager') {
+        // Stationed right at Central Table (East side)
+        deskX = 2.7;
+        deskZ = 0.0;
+        deskRotY = -Math.PI / 2;
+      } else if (isPod1) {
         deskX = col === 0 ? -4.5 : -7.5;
         deskZ = zPos;
         deskRotY = Math.PI / 2; // Facing towards center (+X)
@@ -686,9 +957,19 @@ export class IsometricOffice3D {
 
       // Circular meeting spot around center table
       const angle = (index / totalAgents) * Math.PI * 2 + Math.PI / 12;
-      const meetingX = Math.cos(angle) * meetingRadius;
-      const meetingZ = Math.sin(angle) * meetingRadius;
-      const meetingRotY = Math.atan2(-meetingX, -meetingZ);
+      let meetingX = Math.cos(angle) * meetingRadius;
+      let meetingZ = Math.sin(angle) * meetingRadius;
+      let meetingRotY = Math.atan2(-meetingX, -meetingZ);
+
+      if (baseMeta.id === 'security_supervisor') {
+        meetingX = -2.2;
+        meetingZ = 0.0;
+        meetingRotY = Math.PI / 2;
+      } else if (baseMeta.id === 'youtube_manager') {
+        meetingX = 2.2;
+        meetingZ = 0.0;
+        meetingRotY = -Math.PI / 2;
+      }
 
       const meta: Agent3DMeta = {
         ...baseMeta,

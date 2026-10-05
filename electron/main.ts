@@ -162,6 +162,7 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 let dockWindow: BrowserWindow | null = null;
+let warRoomWindow: BrowserWindow | null = null;
 
 function broadcastToWindows(channel: string, data: any) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -169,6 +170,9 @@ function broadcastToWindows(channel: string, data: any) {
   }
   if (dockWindow && !dockWindow.isDestroyed()) {
     dockWindow.webContents.send(channel, data);
+  }
+  if (warRoomWindow && !warRoomWindow.isDestroyed()) {
+    warRoomWindow.webContents.send(channel, data);
   }
 }
 
@@ -346,6 +350,78 @@ function createDockWindow() {
 
   dockWindow.on('closed', () => {
     dockWindow = null;
+  });
+}
+
+function createWarRoomWindow() {
+  if (warRoomWindow && !warRoomWindow.isDestroyed()) {
+    if (warRoomWindow.isMinimized()) warRoomWindow.restore();
+    warRoomWindow.show();
+    warRoomWindow.focus();
+    return;
+  }
+
+  const preloadPath = fs.existsSync(path.join(__dirname, 'preload.cjs'))
+    ? path.join(__dirname, 'preload.cjs')
+    : path.join(__dirname, '..', 'electron', 'preload.cjs');
+
+  const appIconPath = fs.existsSync(path.join(__dirname, 'icon.png'))
+    ? path.join(__dirname, 'icon.png')
+    : fs.existsSync(path.join(__dirname, 'icon.ico'))
+    ? path.join(__dirname, 'icon.ico')
+    : undefined;
+
+  // Detect external monitor (secondary screen) if available
+  const allDisplays = screen.getAllDisplays();
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const secondaryDisplay = allDisplays.find((d) => d.id !== primaryDisplay.id);
+
+  let winX: number | undefined = undefined;
+  let winY: number | undefined = undefined;
+  let winWidth = 1560;
+  let winHeight = 920;
+
+  if (secondaryDisplay) {
+    winX = secondaryDisplay.bounds.x + 30;
+    winY = secondaryDisplay.bounds.y + 30;
+    winWidth = Math.min(1600, secondaryDisplay.workAreaSize.width - 60);
+    winHeight = Math.min(960, secondaryDisplay.workAreaSize.height - 60);
+  }
+
+  warRoomWindow = new BrowserWindow({
+    width: winWidth,
+    height: winHeight,
+    x: winX,
+    y: winY,
+    minWidth: 1024,
+    minHeight: 700,
+    backgroundColor: '#090a10',
+    title: '⚡ NEXUS WAR ROOM: 24/7 Canlı Operasyon & YouTube Büyüme Üssü',
+    icon: appIconPath,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+      backgroundThrottling: false, // Guarantees 60 FPS Three.js rendering on external screen
+    },
+    show: false,
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    warRoomWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#war-room`);
+  } else {
+    warRoomWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'war-room' });
+  }
+
+  warRoomWindow.once('ready-to-show', () => {
+    warRoomWindow?.show();
+    warRoomWindow?.focus();
+  });
+
+  warRoomWindow.on('closed', () => {
+    warRoomWindow = null;
   });
 }
 
@@ -1317,12 +1393,53 @@ ipcMain.handle('youtube-auth:get-analytics', async () => {
     } catch {}
 
     const data = await googleAuthService.getChannelAnalytics(nextScheduled);
+
+    // Merge uploaded records from local registry for complete tracking
+    try {
+      const localRecords = uploadRegistryService.getAll();
+      if (Array.isArray(localRecords) && localRecords.length > 0) {
+        const existingIds = new Set((data.videos || []).map((v: any) => v.id));
+        const extraClips = localRecords
+          .filter((r) => r.youtubeVideoId && !existingIds.has(r.youtubeVideoId))
+          .map((r) => ({
+            id: r.youtubeVideoId,
+            title: r.title,
+            description: `#Shorts | Otomatik Yayınlandı`,
+            publishedAt: r.uploadedAt,
+            thumbnailUrl: r.thumbnailPath || '',
+            viewCount: 0,
+            likeCount: 0,
+            commentCount: 0,
+            privacyStatus: 'public',
+            isShort: true,
+            videoUrl: r.youtubeUrl,
+          }));
+
+        data.videos = [...(data.videos || []), ...extraClips];
+        data.localUploadsCount = localRecords.length;
+      }
+    } catch {}
+
     return data;
   } catch (err: any) {
     console.error('[Main] YouTube analytics fetch error:', err.message);
     throw err;
   }
 });
+
+// ⚡ War Room Detached Window IPC Handlers
+ipcMain.handle('window:open-war-room', () => {
+  createWarRoomWindow();
+  return { success: true };
+});
+
+ipcMain.handle('window:close-war-room', () => {
+  if (warRoomWindow && !warRoomWindow.isDestroyed()) {
+    warRoomWindow.close();
+  }
+  return { success: true };
+});
+
 
 
 

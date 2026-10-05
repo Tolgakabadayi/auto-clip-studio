@@ -946,7 +946,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                             className="w-full py-1.5 px-3 rounded-lg bg-brand-purple/20 hover:bg-brand-purple/35 border border-brand-purple/50 text-white text-xs font-semibold transition-all flex items-center justify-center space-x-1.5 shadow-sm"
                           >
                             <Bot className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Ajans Masası & Canlı Sohbeti Aç</span>
+                            <span>⚡ NEXUS WAR ROOM (14 Ajan)</span>
                           </button>
                         )}
                       </div>
@@ -1737,14 +1737,14 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center space-x-1.5">
                   <h4 className="text-xs font-bold text-white group-hover:text-brand-purple transition-colors">
-                    🏢 Ajans Masası
+                    ⚡ NEXUS WAR ROOM
                   </h4>
                   <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-brand-purple/20 text-brand-purple border border-brand-purple/30">
-                    8 Ajan
+                    14 Ajan
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                  2D Sanal Ofis • Canlı Ajan Diyalogları
+                  3D Operasyon Masası • Canlı YouTube Scoreboard TV
                 </p>
               </div>
             </div>

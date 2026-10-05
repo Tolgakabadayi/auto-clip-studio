@@ -563,11 +563,22 @@ export class GoogleAuthService {
    * Fetch video-by-video statistics and channel performance analytics
    */
   public async getChannelAnalytics(nextScheduledUpload?: any): Promise<any> {
-    if (!this.oauth2Client) {
-      throw new Error('YouTube hesabı bağlı değil. Lütfen önce YouTube kanalınızı bağlayın.');
+    if (!this.oauth2Client || !fs.existsSync(this.tokenFilePath)) {
+      return {
+        isAuthenticated: false,
+        channel: null,
+        totalViews: 0,
+        subscriberCount: 0,
+        totalVideos: 0,
+        videos: [],
+        nextScheduledUpload: nextScheduledUpload || null,
+        lastUpdated: new Date().toISOString(),
+        message: 'YouTube kanalı henüz bağlı değil.',
+      };
     }
 
-    const youtube = google.youtube({ version: 'v3', auth: this.oauth2Client });
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: this.oauth2Client });
 
     // 1. Get channel stats and uploads playlist ID
     const channelRes = await youtube.channels.list({
@@ -654,14 +665,29 @@ export class GoogleAuthService {
       }
     }
 
-    return {
-      channel: channelInfo,
-      totalViews: parseInt(ch.statistics?.viewCount || '0', 10),
-      subscriberCount: parseInt(ch.statistics?.subscriberCount || '0', 10),
-      totalVideos: parseInt(ch.statistics?.videoCount || '0', 10),
-      videos,
-      nextScheduledUpload: nextScheduledUpload || null,
-      lastUpdated: new Date().toISOString(),
-    };
+      return {
+        isAuthenticated: true,
+        channel: channelInfo,
+        totalViews: parseInt(ch.statistics?.viewCount || '0', 10),
+        subscriberCount: parseInt(ch.statistics?.subscriberCount || '0', 10),
+        totalVideos: parseInt(ch.statistics?.videoCount || '0', 10),
+        videos,
+        nextScheduledUpload: nextScheduledUpload || null,
+        lastUpdated: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      console.warn('[GoogleAuthService] getChannelAnalytics error:', err.message);
+      return {
+        isAuthenticated: false,
+        channel: null,
+        totalViews: 0,
+        subscriberCount: 0,
+        totalVideos: 0,
+        videos: [],
+        nextScheduledUpload: nextScheduledUpload || null,
+        lastUpdated: new Date().toISOString(),
+        error: err.message,
+      };
+    }
   }
 }

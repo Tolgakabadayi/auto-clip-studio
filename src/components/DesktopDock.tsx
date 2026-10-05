@@ -565,7 +565,7 @@ export const DesktopDock: React.FC = () => {
                           WINDOWS DOCKER
                         </span>
                       </h3>
-                      <span className="text-[10px] text-slate-400">• Baş Danışman & War Room Şefi</span>
+                      <span className="text-[10px] text-slate-400">• Baş Danışman & NEXUS Komutanı</span>
                     </div>
                     <p className="text-[10px] text-slate-400 truncate max-w-sm">
                       Masaüstü tam yetkili otonom yapay zeka kontrolü

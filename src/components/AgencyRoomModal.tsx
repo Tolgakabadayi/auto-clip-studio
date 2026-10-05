@@ -35,7 +35,8 @@ import {
   ExternalLink,
   Play,
   Share2,
-  Shield
+  Shield,
+  Film
 } from 'lucide-react';
 import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import {
@@ -357,11 +358,20 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const [isSentinelConsoleOpen, setIsSentinelConsoleOpen] = useState<boolean>(false);
   const [isYouTubeAnalyticsOpen, setIsYouTubeAnalyticsOpen] = useState<boolean>(false);
+  const [isCliffhangerConsoleOpen, setIsCliffhangerConsoleOpen] = useState<boolean>(false);
   const [youtubeAnalytics, setYoutubeAnalytics] = useState<any>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState<boolean>(false);
   const [manualAuditCount, setManualAuditCount] = useState<number>(0);
   const [curatedPitches, setCuratedPitches] = useState<CuratedPitchCandidate[]>([]);
   const [showPitchDeck, setShowPitchDeck] = useState<boolean>(false);
+  const [autopilotSettings, setAutopilotSettings] = useState<any>({
+    seriesModeEnabled: true,
+    seriesPartsCount: 2,
+    seriesIntervalMinutes: 55,
+    seriesOverlayBanner: true,
+    minSourceDurationSeconds: 60,
+  });
+  const [isSavingSeriesSettings, setIsSavingSeriesSettings] = useState<boolean>(false);
 
   useEffect(() => {
     if (!window.electronAPI?.onAgencyPitchesReady) return;
@@ -398,31 +408,80 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
     }
   }, []);
 
+  const fetchAutopilotSettings = useCallback(async () => {
+    if (!window.electronAPI?.autopilotGetSettings) return;
+    try {
+      const s = await window.electronAPI.autopilotGetSettings();
+      if (s) {
+        setAutopilotSettings((prev: any) => ({
+          ...prev,
+          ...s,
+        }));
+      }
+    } catch (err) {
+      console.warn('[WarRoom] Autopilot settings fetch error:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen || isStandalone) {
       fetchAnalytics();
+      fetchAutopilotSettings();
     }
-  }, [isOpen, isStandalone, fetchAnalytics]);
+  }, [isOpen, isStandalone, fetchAnalytics, fetchAutopilotSettings]);
+
+  const handleSaveSeriesSettings = async (partial: any) => {
+    const updated = { ...autopilotSettings, ...partial };
+    setAutopilotSettings(updated);
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      setIsSavingSeriesSettings(true);
+      try {
+        await window.electronAPI.autopilotUpdateSettings(partial);
+      } catch (e) {
+        console.error('Error updating series settings:', e);
+      } finally {
+        setIsSavingSeriesSettings(false);
+      }
+    }
+  };
 
   const handleSelectRole = (role: AgencyRole) => {
     if (role === 'security_supervisor') {
       setIsSentinelConsoleOpen(true);
+      setIsYouTubeAnalyticsOpen(false);
+      setIsCliffhangerConsoleOpen(false);
       setSelectedAgentRole(null);
     } else if (role === 'youtube_manager') {
       setIsYouTubeAnalyticsOpen(true);
+      setIsSentinelConsoleOpen(false);
+      setIsCliffhangerConsoleOpen(false);
+      setSelectedAgentRole(null);
+    } else if (role === 'cliffhanger_architect') {
+      setIsCliffhangerConsoleOpen(true);
+      setIsSentinelConsoleOpen(false);
+      setIsYouTubeAnalyticsOpen(false);
       setSelectedAgentRole(null);
     } else {
       setSelectedAgentRole(role);
     }
   };
 
-  // Active agents array in office
+  // Active agents array in office (merges saved with default to never drop newly added agents)
   const [officeAgents, setOfficeAgents] = useState<AgentOfficeNode[]>(() => {
     try {
       const saved = localStorage.getItem('autoclip_custom_office_agents');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 8) return parsed;
+        if (Array.isArray(parsed) && parsed.length >= 8) {
+          const existingRoles = new Set(parsed.map((a: any) => a.role));
+          const merged = [...parsed];
+          for (const initAgent of INITIAL_OFFICE_AGENTS) {
+            if (!existingRoles.has(initAgent.role)) {
+              merged.push(initAgent);
+            }
+          }
+          return merged;
+        }
       }
     } catch {}
     return INITIAL_OFFICE_AGENTS;
@@ -492,7 +551,14 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length >= 8) {
-          setOfficeAgents(parsed);
+          const existingRoles = new Set(parsed.map((a: any) => a.role));
+          const merged = [...parsed];
+          for (const initAgent of INITIAL_OFFICE_AGENTS) {
+            if (!existingRoles.has(initAgent.role)) {
+              merged.push(initAgent);
+            }
+          }
+          setOfficeAgents(merged);
         }
       }
     } catch {}
@@ -644,7 +710,11 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
 
             {/* YouTube Atlas & Scoreboard Trigger Button */}
             <button
-              onClick={() => setIsYouTubeAnalyticsOpen(true)}
+              onClick={() => {
+                setIsYouTubeAnalyticsOpen(true);
+                setIsSentinelConsoleOpen(false);
+                setIsCliffhangerConsoleOpen(false);
+              }}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-xs font-bold transition-all shadow-md shadow-rose-950/40"
               title="YouTube Atlas Partner canlı kanal analitiği ve Shorts performansını açar"
             >
@@ -654,12 +724,30 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
 
             {/* Sentinel Guard Audit Console Trigger Button */}
             <button
-              onClick={() => setIsSentinelConsoleOpen(true)}
+              onClick={() => {
+                setIsSentinelConsoleOpen(true);
+                setIsYouTubeAnalyticsOpen(false);
+                setIsCliffhangerConsoleOpen(false);
+              }}
               className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 text-xs font-bold transition-all shadow-md shadow-indigo-950/40"
               title="Sentinel Guard güvenlik, telif ve bütünlük teftiş konsolunu açar"
             >
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>🛡️ Sentinel Teftiş</span>
+            </button>
+
+            {/* Cliffhanger Qwen Series Console Trigger Button */}
+            <button
+              onClick={() => {
+                setIsCliffhangerConsoleOpen(true);
+                setIsSentinelConsoleOpen(false);
+                setIsYouTubeAnalyticsOpen(false);
+              }}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/50 text-amber-200 text-xs font-bold transition-all shadow-md shadow-amber-950/40"
+              title="Cliffhanger Qwen Part 1 / Part 2 seri kurgu ve zamanlama konsolunu açar"
+            >
+              <Film className="w-4 h-4 text-amber-400" />
+              <span>🎬 Cliffhanger Seri</span>
             </button>
 
             {/* Harici Ekranda İzle Pop-out Window Button */}
@@ -852,10 +940,14 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                       Telif hakları, viral kancalar, 9:16 yüz takibi, çok dilli yayılım ve YouTube analitikleri bu masada kararlaştırılır.
                     </p>
 
-                    {/* Table-Stationed Command Units: Sentinel Guard & YouTube Atlas */}
-                    <div className="flex items-center gap-3 my-2.5">
+                    {/* Table-Stationed Command Units: Sentinel Guard, YouTube Atlas & Cliffhanger Qwen */}
+                    <div className="flex flex-wrap items-center justify-center gap-3 my-2.5">
                       <button
-                        onClick={() => setIsSentinelConsoleOpen(true)}
+                        onClick={() => {
+                          setIsSentinelConsoleOpen(true);
+                          setIsYouTubeAnalyticsOpen(false);
+                          setIsCliffhangerConsoleOpen(false);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-300 hover:text-white transition-all flex items-center gap-2 shadow-md"
                       >
                         <Shield className="w-4 h-4 text-indigo-400" />
@@ -866,13 +958,32 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                       </button>
 
                       <button
-                        onClick={() => setIsYouTubeAnalyticsOpen(true)}
+                        onClick={() => {
+                          setIsYouTubeAnalyticsOpen(true);
+                          setIsSentinelConsoleOpen(false);
+                          setIsCliffhangerConsoleOpen(false);
+                        }}
                         className="px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 hover:text-white transition-all flex items-center gap-2 shadow-md"
                       >
                         <Youtube className="w-4 h-4 text-rose-400" />
                         <div className="text-left">
                           <span className="text-[10px] font-bold block leading-tight text-white">Atlas Partner</span>
                           <span className="text-[9px] text-rose-400 block">YouTube Kanal Büyüme Müdürü</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsCliffhangerConsoleOpen(true);
+                          setIsSentinelConsoleOpen(false);
+                          setIsYouTubeAnalyticsOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/50 text-amber-300 hover:text-white transition-all flex items-center gap-2 shadow-md"
+                      >
+                        <Film className="w-4 h-4 text-amber-400" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-bold block leading-tight text-white">Cliffhanger Qwen</span>
+                          <span className="text-[9px] text-amber-400 block">Part 1 / Part 2 Seri Mimarı</span>
                         </div>
                       </button>
                     </div>
@@ -938,6 +1049,36 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                     ))}
                   </div>
                 </div>
+
+                {/* POD 4: STRATEJİK YÖNETİM & MERKEZİ DİREKTÖRLER (Cliffhanger Qwen, Atlas, Sentinel) */}
+                {officeAgents.slice(12).length > 0 && (
+                  <div>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                        <Film className="w-3.5 h-3.5" /> Pod 4: Stratejik Yönetim & Seri Direktörleri
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 z-10">
+                      {officeAgents.slice(12).map((agent) => (
+                        <RealisticWorkstationDesk
+                          key={agent.role}
+                          agent={agent}
+                          isActiveTurn={isAnyActive && activeAgentRole === agent.role}
+                          latestMessage={getLatestAgentMessage(agent.role)}
+                          isSelected={
+                            selectedAgentRole === agent.role ||
+                            (agent.role === 'cliffhanger_architect' && isCliffhangerConsoleOpen) ||
+                            (agent.role === 'security_supervisor' && isSentinelConsoleOpen) ||
+                            (agent.role === 'youtube_manager' && isYouTubeAnalyticsOpen)
+                          }
+                          onSelect={() => handleSelectRole(agent.role)}
+                          isAnyActive={isAnyActive}
+                          elapsedSeconds={elapsedSeconds}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -1412,6 +1553,241 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
               </div>
             )}
 
+            {/* ======================================================== */}
+            {/* 🎬 CLIFFHANGER QWEN: SERİ KURGU & PART KONTROL KONSOLU   */}
+            {/* ======================================================== */}
+            {isCliffhangerConsoleOpen && (
+              <div className="absolute inset-y-0 right-0 w-full max-w-xl bg-dark-950/98 border-l border-amber-500/50 shadow-[0_0_50px_rgba(245,158,11,0.35)] p-6 flex flex-col justify-between backdrop-blur-2xl z-40 animate-fadeIn">
+                <div className="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-1">
+                  {/* Drawer Header */}
+                  <div className="flex items-center justify-between border-b border-amber-500/30 pb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-600/20 border border-amber-500/50 flex items-center justify-center text-2xl shadow-lg shadow-amber-500/30">
+                        🎬
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h4 className="text-sm font-black text-white tracking-wide">
+                            Cliffhanger Qwen: Seri Kurgu Konsolu
+                          </h4>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                            SERIES_ARCHITECT
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          60sn+ Videoları Merak Kancasıyla Part 1 & 2'ye Bölme ve Sıralı Yayınlama
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setIsCliffhangerConsoleOpen(false)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* 1. Master Toggle Card: Seri Modu */}
+                  <div className="p-4 bg-gradient-to-r from-amber-950/40 via-dark-900 to-amber-950/20 border border-amber-500/40 rounded-2xl flex items-center justify-between shadow-lg shadow-amber-950/30">
+                    <div className="space-y-1 max-w-[340px]">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-black text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
+                          <Film className="w-4 h-4 text-amber-400" />
+                          Çok Parçalı Seri Shorts Modu
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border font-mono ${
+                          autopilotSettings?.seriesModeEnabled
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : 'bg-dark-800 text-slate-400 border-dark-700'
+                        }`}>
+                          {autopilotSettings?.seriesModeEnabled ? 'AKTİF' : 'DEVRE DIŞI'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Açık olduğunda, bulunan uzun videolar tam hikayenin merak uyandıran düğüm anında bölünür; izleyicileri bir sonraki part için profile çeker.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleSaveSeriesSettings({ seriesModeEnabled: !autopilotSettings?.seriesModeEnabled })}
+                      disabled={isSavingSeriesSettings}
+                      className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        autopilotSettings?.seriesModeEnabled ? 'bg-amber-500' : 'bg-dark-750'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                          autopilotSettings?.seriesModeEnabled ? 'translate-x-6' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* 2. Parameters Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Parça Adedi */}
+                    <div className="p-3.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
+                      <span className="text-[11px] font-bold text-slate-300 block uppercase tracking-wider">
+                        Bölünecek Parça Sayısı
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleSaveSeriesSettings({ seriesPartsCount: 2 })}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
+                            (autopilotSettings?.seriesPartsCount || 2) === 2
+                              ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
+                              : 'bg-dark-950 border-dark-750 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          🎬 2 Parça (Part 1 & 2)
+                        </button>
+                        <button
+                          onClick={() => handleSaveSeriesSettings({ seriesPartsCount: 3 })}
+                          className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
+                            autopilotSettings?.seriesPartsCount === 3
+                              ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
+                              : 'bg-dark-950 border-dark-750 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          🔥 3 Parça (Part 1, 2, 3)
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block italic">
+                        Önerilen: 2 parça yüksek tamamlanma (completion rate) sağlar.
+                      </span>
+                    </div>
+
+                    {/* Sıralı Yayın Aralığı */}
+                    <div className="p-3.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
+                      <span className="text-[11px] font-bold text-slate-300 block uppercase tracking-wider">
+                        Parçalar Arası Yayın Farkı
+                      </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[30, 55, 90].map((min) => (
+                          <button
+                            key={min}
+                            onClick={() => handleSaveSeriesSettings({ seriesIntervalMinutes: min })}
+                            className={`py-2 px-2 rounded-lg text-xs font-bold font-mono transition-all border text-center ${
+                              (autopilotSettings?.seriesIntervalMinutes || 55) === min
+                                ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm'
+                                : 'bg-dark-950 border-dark-750 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {min} dk
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[10px] text-slate-400 block italic">
+                        Örn: Part 1 16:30'da, Part 2 {autopilotSettings?.seriesIntervalMinutes || 55} dk sonra.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 3. Dinamik Üst Bilgi Rozeti (Banner Giydirme) */}
+                  <div className="p-3.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-200 block uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        Dinamik Üst Bilgi Banner Giydirmesi
+                      </span>
+                      <button
+                        onClick={() => handleSaveSeriesSettings({ seriesOverlayBanner: !autopilotSettings?.seriesOverlayBanner })}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border font-mono transition-colors ${
+                          autopilotSettings?.seriesOverlayBanner !== false
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-dark-950 text-slate-500 border-dark-800'
+                        }`}
+                      >
+                        {autopilotSettings?.seriesOverlayBanner !== false ? 'BANNER AÇIK' : 'KAPALI'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="p-2.5 rounded-lg bg-dark-950 border border-dark-750 text-center space-y-1">
+                        <span className="text-[10px] text-slate-400 block">Part 1 Üzerine Basılan Yazı:</span>
+                        <strong className="text-amber-400 font-bold block bg-amber-500/10 py-1 rounded border border-amber-500/20">
+                          PART 1 | Devamı Part 2'de 👇
+                        </strong>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-dark-950 border border-dark-750 text-center space-y-1">
+                        <span className="text-[10px] text-slate-400 block">Part 2 Üzerine Basılan Yazı:</span>
+                        <strong className="text-cyan-400 font-bold block bg-cyan-500/10 py-1 rounded border border-cyan-500/20">
+                          PART 2 (FİNAL) | Başı Profilde 👈
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Son Seri Kurgu Çıktıları & Cliffhanger Analizleri */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                        Cliffhanger Kurgu & Karar Kayıtları
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {messages.filter((m) => m.role === 'cliffhanger_architect').length} Bildirim
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 max-h-52 overflow-y-auto custom-scrollbar">
+                      {messages.filter((m) => m.role === 'cliffhanger_architect').length > 0 ? (
+                        messages
+                          .filter((m) => m.role === 'cliffhanger_architect')
+                          .map((m) => (
+                            <div
+                              key={m.id}
+                              className="p-3 rounded-xl bg-dark-900 border border-dark-800 space-y-1.5 text-xs hover:border-amber-500/30 transition-colors"
+                            >
+                              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                                <span className="font-bold text-amber-400 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                  Cliffhanger Qwen
+                                </span>
+                                <span>{m.timestamp}</span>
+                              </div>
+                              <p className="text-slate-200 leading-relaxed font-sans whitespace-pre-wrap">{m.content}</p>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="p-5 rounded-xl bg-dark-900 border border-dark-800 text-center space-y-1.5">
+                          <p className="text-xs text-slate-400">
+                            Henüz bu oturumda seri kurgu yapılmadı. Otopilot veya toplantı başlatıldığında Cliffhanger Qwen uzun videolardaki kırılma noktalarını burada raporlayacaktır.
+                          </p>
+                          <span className="text-[10px] text-amber-400 font-mono font-bold block">
+                            ⚡ Otomatik Cliffhanger & Sıralı Zamanlama Hazır
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="pt-3 border-t border-dark-750 flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => {
+                      if (onRunAgency) onRunAgency();
+                      else if (window.electronAPI?.autopilotRunBatch) window.electronAPI.autopilotRunBatch(1);
+                    }}
+                    disabled={isProcessing || isSavingSeriesSettings}
+                    className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs transition-all shadow-md shadow-amber-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Şimdi Seri Kurgu Üret</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsCliffhangerConsoleOpen(false)}
+                    className="py-2 px-5 rounded-xl bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white font-bold text-xs border border-dark-700 transition-colors"
+                  >
+                    Kapat
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* 🎯 CURATED PITCH DECK MODAL (AJANSIN SEÇTİĞİ VİRAL ADAYLAR SUNUM MASASI) */}
             {showPitchDeck && curatedPitches.length > 0 && (
               <div className="absolute inset-0 bg-dark-950/90 backdrop-blur-xl z-50 flex items-center justify-center p-6 animate-fadeIn">
@@ -1816,6 +2192,36 @@ const RealisticWorkstationDesk: React.FC<RealisticWorkstationDeskProps> = ({
                 <span>Küresel Pazarlar</span>
               </span>
               <span className="font-mono text-teal-300 text-[9px]">EN / ES / DE</span>
+            </div>
+          )}
+
+          {agent.role === 'cliffhanger_architect' && (
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <Film className="w-3.5 h-3.5 text-amber-400" />
+                <span>Cliffhanger Kurgu</span>
+              </span>
+              <span className="font-mono text-amber-300 font-bold text-[9px]">PART 1 / 2 SERİ</span>
+            </div>
+          )}
+
+          {agent.role === 'security_supervisor' && (
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Telif & Lisans Kalkanı</span>
+              </span>
+              <span className="font-mono text-emerald-300 font-bold text-[9px]">100% GÜVENLİ</span>
+            </div>
+          )}
+
+          {agent.role === 'youtube_manager' && (
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5 text-rose-400" />
+                <span>YouTube Scoreboard</span>
+              </span>
+              <span className="font-mono text-rose-300 font-bold text-[9px]">CANLI ANALİTİK</span>
             </div>
           )}
         </div>

@@ -9,7 +9,7 @@ export interface Agent3DMeta {
   role: string;
   name: string;
   avatar: string;
-  pod: 1 | 2;
+  pod: 1 | 2 | 3;
   podIndex: number;
   model: string;
   department: string;
@@ -297,14 +297,14 @@ export const AGENTS_3D_ROSTER: Omit<Agent3DMeta, 'deskPos' | 'deskRotationY' | '
     role: 'cliffhanger_architect',
     name: 'Cliffhanger Qwen',
     avatar: '🎬',
-    pod: 1,
-    podIndex: 7,
+    pod: 3,
+    podIndex: 0,
     model: 'qwen3:8b',
     department: 'Seri Kurgu & Cliffhanger',
     title: 'Part 1 / Part 2 Seri Mimarı',
     accentColor: 0xf59e0b,
     liveQuote: {
-      idle: 'Seri kurgu odasındayım. Uzun videolardan Part 1 ve Part 2 çıkartmaya hazırım.',
+      idle: 'Merkezi strateji masasındayım. Uzun videolardan Part 1 ve Part 2 çıkartmaya hazırım.',
       working: 'Hikaye gerilim eğrisini tarıyorum; en merak uyandırıcı kırılma noktasında (cliffhanger) Part 1 kesimi yapılıyor.',
       meeting: 'Strateji masasındayım. Part 1 ve Part 2 için merak kancaları ve sıralı yayın saatleri bağlandı.',
     },
@@ -971,6 +971,11 @@ export class IsometricOffice3D {
         deskX = 2.7;
         deskZ = 0.0;
         deskRotY = -Math.PI / 2;
+      } else if (baseMeta.id === 'cliffhanger_architect') {
+        // Stationed right at Central Table (South side, facing North towards table center)
+        deskX = 0.0;
+        deskZ = 2.8;
+        deskRotY = Math.PI;
       } else if (isPod1) {
         deskX = col === 0 ? -4.5 : -7.5;
         deskZ = zPos;
@@ -995,6 +1000,10 @@ export class IsometricOffice3D {
         meetingX = 2.2;
         meetingZ = 0.0;
         meetingRotY = -Math.PI / 2;
+      } else if (baseMeta.id === 'cliffhanger_architect') {
+        meetingX = 0.0;
+        meetingZ = 2.2;
+        meetingRotY = Math.PI;
       }
 
       const meta: Agent3DMeta = {

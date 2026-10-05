@@ -34,8 +34,10 @@ import {
   Award,
   ExternalLink,
   Play,
-  Share2
+  Share2,
+  Shield
 } from 'lucide-react';
+import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import {
   AgencyMessage,
   AgencyAgentConfig,
@@ -788,14 +790,39 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                     </div>
 
                     <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
-                      <span>👑 BÜYÜK STRATEJİ MASASI (12 AJANLI TAM OTONOM KONSENSÜS)</span>
+                      <span>⚡ NEXUS STRATEJİ MASASI (14 AJANLI TAM OTONOM KONSENSÜS)</span>
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-0.5 max-w-xl leading-relaxed">
-                      Telif hakları, viral kancalar, 9:16 yüz takibi, çok dilli yayılım ve altın yayın saatleri bu masada kararlaştırılır.
+                      Telif hakları, viral kancalar, 9:16 yüz takibi, çok dilli yayılım ve YouTube analitikleri bu masada kararlaştırılır.
                     </p>
 
+                    {/* Table-Stationed Command Units: Sentinel Guard & YouTube Atlas */}
+                    <div className="flex items-center gap-3 my-2.5">
+                      <button
+                        onClick={() => setIsSentinelConsoleOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-300 hover:text-white transition-all flex items-center gap-2 shadow-md"
+                      >
+                        <Shield className="w-4 h-4 text-indigo-400" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-bold block leading-tight text-white">Sentinel Guard</span>
+                          <span className="text-[9px] text-indigo-400 block">Baş Güvenlik & Teftiş Şefi</span>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => setIsYouTubeAnalyticsOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 hover:text-white transition-all flex items-center gap-2 shadow-md"
+                      >
+                        <Youtube className="w-4 h-4 text-rose-400" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-bold block leading-tight text-white">Atlas Partner</span>
+                          <span className="text-[9px] text-rose-400 block">YouTube Kanal Büyüme Müdürü</span>
+                        </div>
+                      </button>
+                    </div>
+
                     {/* Real-time Progress Bar on Table */}
-                    <div className="w-full max-w-md mt-3 space-y-1">
+                    <div className="w-full max-w-md mt-1 space-y-1">
                       <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
                         <span>{isAnyActive ? `İşleniyor: ${activeWorkMessage}` : 'Operasyon Bekleniyor'}</span>
                         <span className="font-mono text-brand-cyan">%{activePercent}</span>

@@ -92,7 +92,7 @@ export class UploadRegistryService {
   }
 
   /**
-   * Check if a video/clip/source has already been uploaded to YouTube
+   * Check if a video/clip has already been uploaded to YouTube
    */
   public isUploaded(query: {
     filePath?: string;
@@ -103,14 +103,58 @@ export class UploadRegistryService {
     youtubeVideoId?: string;
   }): boolean {
     return this.records.some((r) => {
+      // Must be an actual uploaded record with a YouTube Video ID or URL
+      if (!r.youtubeVideoId && !r.youtubeUrl) return false;
+
+      // 1. Direct YouTube video ID match
       if (query.youtubeVideoId && r.youtubeVideoId === query.youtubeVideoId) return true;
+
+      // 2. Direct package ID match (an actual autopilot package that completed upload)
       if (query.packageId && r.packageId && r.packageId === query.packageId) return true;
-      if (query.filePath && r.filePath && path.resolve(r.filePath) === path.resolve(query.filePath)) return true;
-      if (query.clipId !== undefined && r.clipId !== undefined && r.clipId === query.clipId) return true;
-      if (query.sourceVideoId && r.sourceVideoId && r.sourceVideoId === query.sourceVideoId) return true;
-      if (query.title && r.title && r.title.trim().toLowerCase() === query.title.trim().toLowerCase()) return true;
+
+      // 3. Exact rendered video file path match
+      if (query.filePath && r.filePath) {
+        try {
+          if (path.resolve(r.filePath).toLowerCase() === path.resolve(query.filePath).toLowerCase()) {
+            return true;
+          }
+        } catch {}
+      }
+
+      // 4. Exact packageId + clipId combination (NEVER clipId alone!)
+      if (
+        query.packageId &&
+        r.packageId &&
+        query.packageId === r.packageId &&
+        query.clipId !== undefined &&
+        r.clipId !== undefined &&
+        r.clipId === query.clipId
+      ) {
+        return true;
+      }
+
+      // 5. Strict title match (only for long distinctive titles, >= 15 chars, never generic)
+      if (
+        query.title &&
+        r.title &&
+        query.title.trim().length >= 15 &&
+        !/^viral\s*kesit/i.test(query.title) &&
+        !/^klip\s*\d*/i.test(query.title) &&
+        r.title.trim().toLowerCase() === query.title.trim().toLowerCase()
+      ) {
+        return true;
+      }
+
       return false;
     });
+  }
+
+  /**
+   * Check specifically if an original CC source video has already been utilized
+   */
+  public isSourceVideoUsed(sourceVideoId: string): boolean {
+    if (!sourceVideoId) return false;
+    return this.records.some((r) => r.sourceVideoId === sourceVideoId);
   }
 
   /**
@@ -122,13 +166,16 @@ export class UploadRegistryService {
     packageId?: string;
     sourceVideoId?: string;
     title?: string;
+    youtubeVideoId?: string;
   }): UploadRecord | undefined {
     return this.records.find((r) => {
+      if (query.youtubeVideoId && r.youtubeVideoId === query.youtubeVideoId) return true;
       if (query.packageId && r.packageId && r.packageId === query.packageId) return true;
-      if (query.filePath && r.filePath && path.resolve(r.filePath) === path.resolve(query.filePath)) return true;
-      if (query.clipId !== undefined && r.clipId !== undefined && r.clipId === query.clipId) return true;
-      if (query.sourceVideoId && r.sourceVideoId && r.sourceVideoId === query.sourceVideoId) return true;
-      if (query.title && r.title && r.title.trim().toLowerCase() === query.title.trim().toLowerCase()) return true;
+      if (query.filePath && r.filePath) {
+        try {
+          if (path.resolve(r.filePath).toLowerCase() === path.resolve(query.filePath).toLowerCase()) return true;
+        } catch {}
+      }
       return false;
     });
   }

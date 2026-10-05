@@ -71,12 +71,10 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
       if (clip.youtubeUrl) setUploadedUrl(clip.youtubeUrl);
       return;
     }
-    if (window.electronAPI?.uploadRegistryIsUploaded && clip) {
+    if (window.electronAPI?.uploadRegistryIsUploaded && clip && clip.outputPath) {
       window.electronAPI
         .uploadRegistryIsUploaded({
           filePath: clip.outputPath,
-          clipId: clip.clip_id,
-          title: clip.title,
         })
         .then((uploaded: boolean) => {
           if (uploaded) setIsAlreadyUploaded(true);
@@ -187,7 +185,7 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
 
     if (isAlreadyUploaded) {
       const confirmUpload = window.confirm(
-        `⚠️ DİKKAT: Bu klip daha önce sisteme yüklendi olarak kayıtlıdır!\n\nTekrar yüklemek YouTube kanalınızda mükerrer içerik oluşmasına yol açabilir.\n\nYine de tekrar yüklemek istiyor musunuz?`
+        `ℹ️ BİLGİ: Bu video dosyası daha önce YouTube'a yüklenmiş olarak kayıtlı.\n\nKanalınıza tekrar yüklemek istiyor musunuz?`
       );
       if (!confirmUpload) return;
     }

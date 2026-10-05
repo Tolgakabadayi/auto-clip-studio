@@ -807,9 +807,11 @@ export class AutopilotService {
       }
     );
 
-    // STEP 5: MULTI-AGENT AGENCY PIPELINE (Scout -> CEO -> Vision -> Copy -> QA)
+    // STEP 5: MULTI-AGENT AGENCY PIPELINE (14 Ajanlı Tam Otonom Senkronizasyon)
     this.state.activeAgent = 'ceo';
     this.updateProgress(5, 'Ajans Analizi', 62, 'Yapay Zeka Ajansı viral kesitleri ve kancaları üretiyor...', batchCurrent, batchTotal);
+
+    const nextSlot = this.calculateNextSlot();
 
     const producedClips = await this.agencyService.runAgencyPipeline(transcript, {
       clipCount: this.settings.clipsPerVideo || 1,
@@ -817,6 +819,7 @@ export class AutopilotService {
       maxClipDuration: 60,
       videoPath: rawVideoPath,
       outputDirectory: this.settings.archiveDirectory,
+      currentSlot: nextSlot,
       onMessage: this.onAgencyMessage,
       onProgress: (prog) => {
         this.updateProgress(
@@ -847,10 +850,10 @@ export class AutopilotService {
     this.state.activeAgent = 'scheduler';
     this.updateProgress(6, 'Yayın & Render', 82, 'Planner Qwen altın yayın saatini planlıyor...', batchCurrent, batchTotal);
 
-    const nextSlot = this.calculateNextSlot();
     const schedulePlan = await this.agencyService.planScheduleSlot(bestClip, this.settings.postingSlots, {
       onMessage: this.onAgencyMessage,
       onLog: this.onLog,
+      currentSlot: nextSlot,
     });
 
     // STEP 7: RENDER VERTICAL 9:16 CLIP
@@ -1116,14 +1119,14 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     });
 
     for (const pkg of duePackages) {
-      // 1. STRICT DEDUPLICATION CHECK: Check if this video was already uploaded
-      const alreadyUploaded = this.uploadRegistryService?.isUploaded({
-        packageId: pkg.id,
-        filePath: pkg.videoPath,
-        clipId: pkg.clipId,
-        sourceVideoId: pkg.sourceVideo?.id,
-        title: pkg.title,
-      });
+      // 1. STRICT DEDUPLICATION CHECK: Check if this specific package was already uploaded
+      const alreadyUploaded =
+        (pkg.isUploaded && pkg.youtubeVideoId) ||
+        this.uploadRegistryService?.isUploaded({
+          packageId: pkg.id,
+          filePath: pkg.videoPath,
+          youtubeVideoId: pkg.youtubeVideoId,
+        });
 
       if (alreadyUploaded) {
         this.emitLog(`[Otopilot] ℹ️ "${pkg.title}" zaten YouTube'a yüklenmiş. Mükerrer yayınlama engellendi.`);
@@ -1198,11 +1201,11 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
 
     // Prevent duplicate upload if already uploaded
     if (
+      (pkg.isUploaded && pkg.youtubeVideoId) ||
       this.uploadRegistryService?.isUploaded({
         packageId: pkg.id,
         filePath: pkg.videoPath,
-        clipId: pkg.clipId,
-        sourceVideoId: pkg.sourceVideo?.id,
+        youtubeVideoId: pkg.youtubeVideoId,
       })
     ) {
       this.emitLog(`[Otopilot] "${pkg.title}" daha önce yüklenmiş olduğu için mükerrer yükleme durduruldu.`);

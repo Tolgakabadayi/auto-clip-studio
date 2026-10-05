@@ -73,9 +73,23 @@ export const WarRoomStandalone: React.FC = () => {
     };
   }, []);
 
-  const handleStartMeeting = () => {
-    // If user clicks start meeting from detached window, trigger via agency
+  const handleStartMeeting = async () => {
     setIsProcessing(true);
+    if (window.electronAPI?.startDiscoveryMeeting) {
+      try {
+        await window.electronAPI.startDiscoveryMeeting();
+      } catch (err: any) {
+        console.error('[WarRoom] Discovery meeting error:', err);
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleSelectPitch = async (pitch: any) => {
+    if (window.electronAPI?.approveAgencyPitch) {
+      await window.electronAPI.approveAgencyPitch(pitch);
+    }
   };
 
   return (
@@ -94,6 +108,7 @@ export const WarRoomStandalone: React.FC = () => {
         onUpdateAgents={setAgents}
         isProcessing={isProcessing}
         onRunAgency={handleStartMeeting}
+        onSelectPitch={handleSelectPitch}
         hasVideo={true}
         pipelineProgress={pipelineProgress}
         autopilotState={autopilotState || undefined}

@@ -139,6 +139,20 @@ export const electronAPI = {
     ipcRenderer.on('clip:uploaded', subscription);
     return () => ipcRenderer.removeListener('clip:uploaded', subscription);
   },
+  // 🎯 Strategic Discovery Meeting & Pitch Deck
+  startDiscoveryMeeting: (options?: { niche?: string; keyword?: string }) =>
+    ipcRenderer.invoke('agency:start-discovery-meeting', options),
+  onAgencyPitchesReady: (callback: (pitches: any[]) => void) => {
+    const subscription = (_event: any, value: any) => callback(value);
+    ipcRenderer.on('agency:pitches-ready', subscription);
+    return () => ipcRenderer.removeListener('agency:pitches-ready', subscription);
+  },
+  approveAgencyPitch: (pitch: any) => ipcRenderer.invoke('agency:approve-pitch', pitch),
+  onAgencyPitchApproved: (callback: (pitch: any) => void) => {
+    const subscription = (_event: any, value: any) => callback(value);
+    ipcRenderer.on('agency:pitch-approved', subscription);
+    return () => ipcRenderer.removeListener('agency:pitch-approved', subscription);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

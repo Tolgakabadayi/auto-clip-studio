@@ -45,6 +45,7 @@ import {
   PipelineProgress,
   AutopilotState,
   SystemHealth,
+  CuratedPitchCandidate,
 } from '../types';
 import { Office3DViewport } from './Office3DViewport';
 
@@ -62,6 +63,7 @@ interface AgencyRoomModalProps {
   autopilotState?: AutopilotState;
   systemHealth?: SystemHealth | null;
   isStandalone?: boolean;
+  onSelectPitch?: (pitch: CuratedPitchCandidate) => void;
 }
 
 export interface AgentOfficeNode {
@@ -332,6 +334,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   autopilotState,
   systemHealth,
   isStandalone = false,
+  onSelectPitch,
 }) => {
   const [selectedAgentRole, setSelectedAgentRole] = useState<AgencyRole | null>(null);
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
@@ -340,6 +343,30 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   const [youtubeAnalytics, setYoutubeAnalytics] = useState<any>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState<boolean>(false);
   const [manualAuditCount, setManualAuditCount] = useState<number>(0);
+  const [curatedPitches, setCuratedPitches] = useState<CuratedPitchCandidate[]>([]);
+  const [showPitchDeck, setShowPitchDeck] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onAgencyPitchesReady) return;
+    const unsub = window.electronAPI.onAgencyPitchesReady((pitches: any[]) => {
+      if (Array.isArray(pitches) && pitches.length > 0) {
+        setCuratedPitches(pitches);
+        setShowPitchDeck(true);
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  const handleApprovePitch = (pitch: CuratedPitchCandidate) => {
+    setShowPitchDeck(false);
+    if (onSelectPitch) {
+      onSelectPitch(pitch);
+    } else if (window.electronAPI?.approveAgencyPitch) {
+      window.electronAPI.approveAgencyPitch(pitch);
+    }
+  };
 
   const fetchAnalytics = useCallback(async () => {
     if (!window.electronAPI?.youtubeGetAnalytics) return;
@@ -631,6 +658,18 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
               >
                 <ExternalLink className="w-4 h-4 text-cyan-400" />
                 <span>Harici Ekranda İzle</span>
+              </button>
+            )}
+
+            {/* Viral Pitches Presentation Deck Button */}
+            {curatedPitches.length > 0 && (
+              <button
+                onClick={() => setShowPitchDeck(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-purple-900/80 hover:bg-purple-800 border border-purple-500/60 text-purple-200 text-xs font-bold transition-all shadow-md shadow-purple-950/40 animate-pulse"
+                title="Ajansın seçtiği viral adaylar sunum masasını açar"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>🎯 Viral Adaylar ({curatedPitches.length})</span>
               </button>
             )}
 
@@ -1352,6 +1391,153 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                   >
                     Kapat
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* 🎯 CURATED PITCH DECK MODAL (AJANSIN SEÇTİĞİ VİRAL ADAYLAR SUNUM MASASI) */}
+            {showPitchDeck && curatedPitches.length > 0 && (
+              <div className="absolute inset-0 bg-dark-950/90 backdrop-blur-xl z-50 flex items-center justify-center p-6 animate-fadeIn">
+                <div className="bg-dark-900 border border-purple-500/40 rounded-3xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl shadow-purple-950/60 overflow-hidden">
+                  {/* Pitch Deck Header */}
+                  <div className="px-6 py-4 border-b border-dark-750 bg-gradient-to-r from-purple-950/70 via-dark-850 to-dark-900 flex items-center justify-between shrink-0">
+                    <div className="flex items-center space-x-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-purple-500/30 text-xl">
+                        🎯
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2.5">
+                          <h4 className="text-base font-black text-white tracking-tight">
+                            AJANS STRATEJİK VİRAL PITCH DECK (ADAY SUNUM MASASI)
+                          </h4>
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                            {curatedPitches.length} Seçkin Aday
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          12 Ajan YouTube'u taradı, Sentinel lisansı denetledi, Hook Master viralliği puanladı. Onayladığınız video doğrudan üretime alınır.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowPitchDeck(false)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dark-800 transition-colors"
+                      title="Kapat"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Pitch Candidates Grid */}
+                  <div className="p-6 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                    {curatedPitches.map((pitch, index) => {
+                      const scoreColor =
+                        pitch.viralityScore >= 92
+                          ? 'from-emerald-500 to-teal-400 text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
+                          : pitch.viralityScore >= 85
+                          ? 'from-purple-500 to-pink-500 text-purple-300 border-purple-500/40 bg-purple-500/10'
+                          : 'from-amber-500 to-orange-500 text-amber-300 border-amber-500/40 bg-amber-500/10';
+
+                      return (
+                        <div
+                          key={pitch.videoId || index}
+                          className="bg-dark-950/80 border border-dark-750 hover:border-purple-500/50 rounded-2xl p-4 flex flex-col justify-between transition-all duration-200 shadow-lg group hover:shadow-purple-500/10"
+                        >
+                          <div className="space-y-3">
+                            {/* Card Top: Rank & Dynamic Virality Score */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-mono font-bold text-slate-400 px-2 py-0.5 rounded bg-dark-900 border border-dark-800">
+                                #{index + 1} ÖNCELİKLİ ADAY
+                              </span>
+                              <div
+                                className={`flex items-center space-x-1.5 px-3 py-1 rounded-full border text-xs font-black shadow-sm ${scoreColor}`}
+                              >
+                                <Flame className="w-3.5 h-3.5 animate-pulse" />
+                                <span>%{pitch.viralityScore} Virallik Skoru</span>
+                              </div>
+                            </div>
+
+                            {/* Video Title & Channel */}
+                            <div>
+                              <h5 className="text-sm font-bold text-white line-clamp-2 leading-snug group-hover:text-amber-200 transition-colors">
+                                {pitch.title}
+                              </h5>
+                              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                                <span>📺 Kanal: {pitch.channelTitle || pitch.channel || 'Bilinmeyen Kanal'}</span>
+                                {((pitch.durationSeconds || pitch.duration || 0) > 0) && (
+                                  <>
+                                    <span>•</span>
+                                    <span>
+                                      ⏱️ {pitch.durationFormatted || `${Math.floor((pitch.durationSeconds || pitch.duration || 0) / 60)}:${((pitch.durationSeconds || pitch.duration || 0) % 60).toString().padStart(2, '0')}`}
+                                    </span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
+
+                            {/* Hook Master Analysis */}
+                            <div className="p-3 bg-dark-900/90 rounded-xl border border-dark-800 text-xs space-y-1">
+                              <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider flex items-center gap-1">
+                                <Zap className="w-3 h-3 text-amber-400" /> Kanca (Hook) Stratejisi
+                              </span>
+                              <p className="text-slate-300 italic">
+                                "{pitch.hookAnalysis}"
+                              </p>
+                            </div>
+
+                            {/* SEO Angle & Sentinel Badge */}
+                            <div className="text-[11px] text-slate-400 space-y-1.5">
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-indigo-400 font-bold shrink-0">💡 SEO Açısı:</span>
+                                <span className="text-slate-300">{pitch.seoAngle}</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[10px] pt-1">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>Sentinel Onaylı: CC-BY Lisansı Doğrulandı • Ticari Müzik Yok</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Card Footer: Action Buttons */}
+                          <div className="pt-4 mt-3 border-t border-dark-800 flex items-center justify-between gap-2.5">
+                            {(pitch.videoUrl || pitch.url) && (
+                              <button
+                                onClick={() => window.open(pitch.videoUrl || pitch.url, '_blank')}
+                                className="px-3 py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white text-xs font-bold transition-all border border-dark-700 flex items-center gap-1.5"
+                                title="YouTube'da izle"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>YouTube</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleApprovePitch(pitch)}
+                              className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-white" />
+                              <span>🎬 Bu Videoyu Onayla & Üretime Al</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Pitch Deck Bottom Bar */}
+                  <div className="px-6 py-3 border-t border-dark-750 bg-dark-850 flex items-center justify-between text-xs text-slate-400 shrink-0">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      Tüm adaylar telif riski %0 olarak Sentinel Guard tarafından filtrelenmiştir.
+                    </span>
+                    <button
+                      onClick={() => setShowPitchDeck(false)}
+                      className="px-4 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-slate-300 font-bold"
+                    >
+                      Pencereyi Gizle
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

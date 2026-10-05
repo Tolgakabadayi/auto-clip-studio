@@ -23,6 +23,7 @@ import {
   AgencyMessage,
   AgencyAgentConfig,
   AutopilotState,
+  CuratedPitchCandidate,
 } from './types';
 
 export const App: React.FC = () => {
@@ -442,14 +443,14 @@ export const App: React.FC = () => {
     if (!videoMetadata) {
       setLogs((prev) => [
         ...prev,
-        '👑 [3D Ajans Odası]: Video seçilmediği için YouTube Creative Commons viral arama motoru devreye girdi. En viral kaynak video taranıyor ve 12 ajan masaya toplanıyor...',
+        '👑 [NEXUS WAR ROOM]: 12 Ajan Stratejik Keşif Toplantısı başlatıldı! YouTube Creative Commons videoları taranıyor, Sentinel telif & müzik denetliyor, Hook Master viralliği hesaplıyor...',
       ]);
       try {
-        if (window.electronAPI.autopilotRunCycle) {
-          await window.electronAPI.autopilotRunCycle();
+        if (window.electronAPI.startDiscoveryMeeting) {
+          await window.electronAPI.startDiscoveryMeeting();
         }
       } catch (err: any) {
-        setLogs((prev) => [...prev, `[HATA] Otonom arama hatası: ${err.message}`]);
+        setLogs((prev) => [...prev, `[HATA] Stratejik toplantı hatası: ${err.message}`]);
         alert(`Ajans toplantısı hatası: ${err.message}`);
       } finally {
         setIsProcessing(false);
@@ -598,6 +599,33 @@ export const App: React.FC = () => {
       alert(`YouTube indirme hatası: ${err.message}`);
     }
   };
+
+  const handleSelectPitch = async (pitch: CuratedPitchCandidate) => {
+    setIsAgencyModalOpen(false);
+    setLogs((prev) => [
+      ...prev,
+      `🎯 Ajansın Stratejik Sunum Masasından Seçilen Video: "${pitch.title}" (${pitch.channelTitle})`,
+      `🔥 Dinamik Virallik Skoru: %${pitch.viralityScore} | Kanca: "${pitch.hookAnalysis}"`,
+      `🛡️ Sentinel Güvenlik Kontrolü: CC-BY Lisansı Doğrulandı • Ticari Müzik Yok!`,
+      `🚀 Video otomatik indiriliyor ve klipleme hattına alınıyor...`,
+    ]);
+    await handleDownloadYouTube(pitch.videoUrl, true);
+  };
+
+  const handleSelectPitchRef = useRef(handleSelectPitch);
+  handleSelectPitchRef.current = handleSelectPitch;
+
+  useEffect(() => {
+    if (!window.electronAPI?.onAgencyPitchApproved) return;
+    const unsub = window.electronAPI.onAgencyPitchApproved((pitch: any) => {
+      if (pitch) {
+        handleSelectPitchRef.current(pitch);
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   const handleReRenderClip = async (clip: ViralClip) => {
     if (!videoMetadata || !window.electronAPI) return;
@@ -859,6 +887,7 @@ export const App: React.FC = () => {
         onUpdateAgents={setAgencyAgents}
         isProcessing={isProcessing}
         onRunAgency={handleRunAgencyBrainstorm}
+        onSelectPitch={handleSelectPitch}
         hasVideo={!!videoMetadata}
         pipelineProgress={pipelineProgress}
         autopilotState={autopilotState}

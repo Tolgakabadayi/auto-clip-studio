@@ -394,18 +394,6 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
         >
           <RotateCcw className="w-4 h-4" />
         </button>
-
-        {/* Start Meeting Button */}
-        <button
-          id="btn-start-meeting"
-          onClick={handleTriggerMeeting}
-          disabled={isProcessing}
-          className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-brand-purple to-brand-cyan hover:from-amber-600 hover:to-cyan-600 text-white text-xs font-bold shadow-lg shadow-brand-purple/20 transition-all disabled:opacity-50"
-          title="12 ajanı merkez konsensüs masasına toplar ve Ollama ile beyin fırtınasını başlatır"
-        >
-          <Sparkles className={`w-3.5 h-3.5 text-amber-200 ${isProcessing ? 'animate-spin' : ''}`} />
-          <span>{isProcessing ? 'Konsensüs Sürüyor...' : 'Toplantıyı Başlat'}</span>
-        </button>
       </div>
 
       {/* ======================================================== */}

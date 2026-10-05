@@ -820,30 +820,37 @@ export class IsometricOffice3D {
     ctx.fillText('● 24/7 OTOMATİK YAYIN AKTİF', canvas.width - 32, 38);
 
     // 4 Real-time Score Cards (Total Views, Live Subs, Published Shorts, Total Engagement)
+    const totalViews = stats.totalViews || 0;
+    const totalVideos = stats.totalVideos || 0;
+    const totalLikes = stats.totalLikes || 0;
+    const subscribers = stats.subscriberCount || 0;
+    const avgViewsPerVideo = totalVideos > 0 ? Math.round(totalViews / totalVideos) : 0;
+    const engagementRate = totalViews > 0 ? ((totalLikes / totalViews) * 100).toFixed(1) : '0.0';
+
     const cards = [
       {
         label: 'TOPLAM İZLENME',
-        value: stats.totalViews !== undefined ? stats.totalViews.toLocaleString('tr-TR') : '0',
+        value: totalViews.toLocaleString('tr-TR'),
         color: '#f43f5e',
-        badge: 'Canlı YouTube',
+        badge: avgViewsPerVideo > 0 ? `Ort. ${avgViewsPerVideo.toLocaleString('tr-TR')} / Video` : 'Canlı YouTube',
       },
       {
         label: 'ABONE SAYISI',
-        value: stats.subscriberCount !== undefined ? stats.subscriberCount.toLocaleString('tr-TR') : '0',
+        value: subscribers.toLocaleString('tr-TR'),
         color: '#38bdf8',
-        badge: 'Canlı Büyüme',
+        badge: subscribers > 0 ? `${subscribers.toLocaleString('tr-TR')} Aktif Abone` : 'Canlı Kanal',
       },
       {
         label: 'YÜKLENEN SHORTS',
-        value: stats.totalVideos !== undefined ? `${stats.totalVideos} Video` : '0 Video',
+        value: `${totalVideos} Video`,
         color: '#fbbf24',
         badge: 'Otopilot & Stüdyo',
       },
       {
         label: 'TOPLAM ETKİLEŞİM',
-        value: stats.totalLikes !== undefined ? `${stats.totalLikes.toLocaleString('tr-TR')} Beğeni` : 'Canlı Etkileşim',
+        value: `${totalLikes.toLocaleString('tr-TR')} Beğeni`,
         color: '#10b981',
-        badge: 'Topluluk Reaksiyonu',
+        badge: totalViews > 0 ? `%${engagementRate} Etkileşim Oranı` : 'Topluluk Reaksiyonu',
       },
     ];
 

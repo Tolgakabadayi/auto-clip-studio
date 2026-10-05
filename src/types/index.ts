@@ -237,6 +237,29 @@ export interface CCVideoCandidate {
   discoveredAt: string;
 }
 
+export interface CuratedPitchCandidate {
+  id: string;
+  url: string;
+  title: string;
+  channel: string;
+  duration: number;
+  durationFormatted: string;
+  viewCount: number;
+  thumbnailUrl: string;
+  viralityScore: number;
+  hookAnalysis: string;
+  seoAngle: string;
+  targetAudience: string;
+  license: string;
+  verifiedSafe: boolean;
+  discoveredAt: string;
+  // Aliases
+  videoId?: string;
+  videoUrl?: string;
+  channelTitle?: string;
+  durationSeconds?: number;
+}
+
 export interface ScheduledClipPackage {
   id: string;
   clipId: number;

@@ -181,7 +181,7 @@ const whisperService = new WhisperService();
 const llmService = new LLMService();
 const youtubeService = new YouTubeService();
 const faceTrackingService = new FaceTrackingService();
-const agencyService = new AgencyService(ffmpegService);
+const agencyService = new AgencyService(ffmpegService, youtubeService);
 const googleAuthService = new GoogleAuthService();
 const uploadRegistryService = new UploadRegistryService();
 const autopilotService = new AutopilotService(
@@ -1098,13 +1098,13 @@ ipcMain.handle('agency:run-pipeline', async (_event, payload: {
   }
 
   const sendAgencyMessage = (msg: AgencyMessage) => {
-    mainWindow?.webContents.send('agency:message', msg);
+    broadcastToWindows('agency:message', msg);
   };
   const sendAgencyProgress = (p: AgencyProgressEvent) => {
-    mainWindow?.webContents.send('agency:progress', p);
+    broadcastToWindows('agency:progress', p);
   };
   const sendLog = (l: string) => {
-    mainWindow?.webContents.send('pipeline:log', l);
+    broadcastToWindows('pipeline:log', l);
   };
 
   return await agencyService.runAgencyPipeline(currentTranscript, {
@@ -1120,6 +1120,41 @@ ipcMain.handle('agency:run-pipeline', async (_event, payload: {
     onLog: sendLog,
     isCancelled: () => isCancelled,
   });
+});
+
+// 🎯 IPC Handler: Start Collaborative Strategic Discovery Meeting & Pitch Deck
+ipcMain.handle('agency:start-discovery-meeting', async (_event, payload?: { niche?: string; keyword?: string }) => {
+  const sendAgencyMessage = (msg: AgencyMessage) => {
+    broadcastToWindows('agency:message', msg);
+  };
+  const sendAgencyProgress = (p: AgencyProgressEvent) => {
+    broadcastToWindows('agency:progress', p);
+  };
+  const sendLog = (l: string) => {
+    broadcastToWindows('pipeline:log', l);
+  };
+
+  const apSettings = autopilotService.getSettings();
+  const niche = payload?.niche || apSettings.selectedNiche || 'yapay zeka ve teknoloji';
+  const keyword = payload?.keyword || apSettings.customKeyword || undefined;
+
+  const result = await agencyService.runStrategicDiscoveryMeeting({
+    niche,
+    keyword,
+    onMessage: sendAgencyMessage,
+    onProgress: sendAgencyProgress,
+    onLog: sendLog,
+  });
+
+  // Broadcast curated candidate pitches to all windows (main + external war room)
+  broadcastToWindows('agency:pitches-ready', result.candidates);
+
+  return result;
+});
+
+ipcMain.handle('agency:approve-pitch', (_event, pitch: any) => {
+  broadcastToWindows('agency:pitch-approved', pitch);
+  return { success: true };
 });
 
 // ==========================================

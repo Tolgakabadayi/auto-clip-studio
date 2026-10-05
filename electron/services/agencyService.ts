@@ -164,6 +164,15 @@ export class AgencyService {
       avatar: '🔴',
       description: 'YouTube kanalının izlenme, beğeni ve abone analizlerini izler; Shorts performansını takip eder ve bir sonraki yayın saatini koordine eder.',
     },
+    {
+      role: 'cliffhanger_architect',
+      title: 'Part 1 / Part 2 Seri Mimarı',
+      name: 'Cliffhanger Qwen',
+      model: 'qwen3:8b',
+      enabled: true,
+      avatar: '🎬',
+      description: '60sn+ uzun videolardan merak uyandıran kırılma anında (cliffhanger) bölerek Part 1 ve Part 2 seri Shorts videoları üretir.',
+    },
   ];
 
   constructor(ffmpegService: FFmpegService, youtubeService?: YouTubeService) {
@@ -782,10 +791,11 @@ Görseli incele ve konuşmacının mimik enerjisini, netliğini 1-2 kısa cümle
           const matchingSegs = transcript.segments.filter(
             (s) => s.start >= c.start_seconds && s.end <= c.end_seconds
           );
-          const dialogueText = matchingSegs.map((s) => s.text.trim()).filter(Boolean).join(' ').substring(0, 400);
+          const dialogueText = matchingSegs.map((s) => s.text.trim()).filter(Boolean).join(' ').substring(0, 500);
+          c.transcriptSnippet = dialogueText || c.hook_sentence;
           return `[Klip ${c.clip_id}] (${c.start_seconds}s - ${c.end_seconds}s)
 Kanca Cümlesi: "${c.hook_sentence}"
-Konuşulanlar / Diyalog: "${dialogueText || c.hook_sentence}"
+Konuşulanlar / Diyalog Kesiti: "${dialogueText || c.hook_sentence}"
 Gerekçe / Konu: "${c.reason}"
 SEO Trend Kelimeleri: "${(c.keywords || seoTrendKeywords).join(', ')}"`;
         })
@@ -801,12 +811,14 @@ BAŞLIK KURALLARI (HER KLİP İÇİN MUTLAKA 3 FARKLI AÇI):
 * JENERİK BAŞLIKLAR KESİNLİKLE YASAKTIR! Başlıklar videodaki gerçek konuşma konusunu ve kilit kelimeleri taşımalıdır.
 
 AÇIKLAMA METNİ (DESCRIPTION) KURALLARI:
-- 2-3 zengin paragraf: İlk 2 satırda merak uyandıran özet, konuşmacının ana fikri, izleyiciye kattığı değer ve resmi YouTube Creative Commons (CC-BY 4.0) atıfı.
-- Call to Action (CTA): Yorumlarda tartışma açacak, fikir soran güçlü bir soru.
+- KESİNLİKLE hiçbir uygulama, yazılım veya bağlantı / link (GitHub, web sitesi vb.) EKLEME! YouTube Shorts politikası gereği linkler yasaktır ve izleyiciye itici gelir.
+- Açıklama %100 klipteki konuşma, hikaye ve röportaj içeriği ile ilgili olmalıdır.
+- Videoda konuşulanlardan ARADAN KESİTLER ("tırnak içinde doğrudan diyalog alıntıları") içermeli ve konuşmacının aktardığı tecrübeyi / hikayeyi 2-3 zengin paragrafta detaylandırmalıdır.
+- Sonunda izleyicinin düşüncelerini soran güçlü bir Çağrı (Call to Action) ve konuya özel zengin hashtag'ler yer almalıdır.
 
-HASHTAG KURALLARI (EN AZ 12 ADET):
+HASHTAG KURALLARI (EN AZ 10 ADET):
 - Geniş etiketler: #shorts, #keşfet, #viral, #trend, #fyp
-- Konuya özel niş etiketler: En az 7 adet videodaki anahtar kelimelerden türetilmiş yüksek aranma hacimli etiketler.
+- Konuya özel niş etiketler: En az 6 adet videodaki konuşulan konudan, röportajdan ve anahtar kelimelerden türetilmiş yüksek aranma hacimli etiketler.
 
 KLİPLERİN DİYALOGLARI VE GEREKÇELERİ:
 ${clipsSummary}
@@ -820,8 +832,8 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
       "Aciliyet Açısı: Sakın Bu Hatayı Yapmayın?",
       "Şok İtiraf Açısı: Herkes Yanılıyor!"
     ],
-    "description": "🔥 Vurucu ilk cümle! Videoda konuşmacının aktardığı derin detaylar burada özetlenir. İzleyicinin hayata geçirebileceği kilit tavsiye.\\n\\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)\\n\\n📌 Kaynak: Creative Commons CC-BY 4.0 lisansı kapsamında türev kurgulanmıştır.",
-    "hashtags": ["#shorts", "#keşfet", "#viral", "#trend", "#podcast", "#başarı", "#motivasyon", "#girişimcilik", "#farkındalık", "#tavsiye", "#psikoloji", "#reels"],
+    "description": "🔥 \"...\" sözleriyle dikkat çeken bu kesitte konuşmacının paylaştığı sarsıcı detaylar ve yaşam tecrübesi ele alınıyor. Gerçek hayatın içinden çıkarılacak en kilit ders.\\n\\nSizce konuşmacı bu tespitinde haklı mı? Düşüncelerinizi yorumlarda paylaşmayı unutmayın! 👇",
+    "hashtags": ["#shorts", "#keşfet", "#viral", "#trend", "#röportaj", "#hikaye", "#podcast", "#yaşam", "#farkındalık", "#tavsiye"],
     "callToAction": "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım! 👇"
   }
 ]`;
@@ -837,15 +849,22 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
         // SET THE NEW PUNCHY TITLE AS THE OFFICIAL CLIP TITLE!
         clip.title = finalTitles[0];
 
-        let desc = found?.description || `${clip.hook_sentence} | Devamı ve fazlası için takip edin!`;
-        if (!desc.includes('https://github.com/Tolgakabadayi/auto-clip-studio')) {
-          desc += `\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)`;
-        }
+        let desc = found?.description || `🔥 "${clip.hook_sentence}"\n\nBu kesitte konuşmacının aktardığı samimi detaylar ve tecrübeler anlatılıyor.`;
+        // Strictly sanitize description: No links, no app mentions per YouTube Shorts guidelines
+        desc = desc
+          .replace(/https?:\/\/[^\s]+/gi, '')
+          .replace(/⚡\s*Bu video AutoClip[^\n]*/gi, '')
+          .replace(/🚀\s*Proje & Kaynak Kod:[^\n]*/gi, '')
+          .replace(/#AutoClipAI/gi, '#Keşfet')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
 
         clip.socialMetadata = {
           titles: finalTitles,
           description: desc,
-          hashtags: Array.isArray(found?.hashtags) && found.hashtags.length > 0 ? found.hashtags : ['#viral', '#shorts', '#kesit', '#fyp', '#keşfet'],
+          hashtags: Array.isArray(found?.hashtags) && found.hashtags.length > 0
+            ? found.hashtags.filter((h: string) => !/autoclip|autocut/i.test(h))
+            : ['#viral', '#shorts', '#röportaj', '#hikaye', '#keşfet', '#podcast'],
           callToAction: found?.callToAction || 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇',
         };
       }
@@ -855,8 +874,8 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
         clip.title = fallbackTitles[0];
         clip.socialMetadata = {
           titles: fallbackTitles,
-          description: `${clip.hook_sentence}\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)`,
-          hashtags: ['#viral', '#fyp', '#reels', '#shorts', '#tiktok'],
+          description: `🔥 "${clip.hook_sentence || clip.title}"\n\nBu kesitte konuşmacının paylaştığı dikkat çekici anlar ve tecrübeler yer alıyor. Sizce bu konuda haklı mı?`,
+          hashtags: ['#viral', '#shorts', '#röportaj', '#hikaye', '#keşfet', '#podcast'],
           callToAction: 'Siz ne düşünüyorsunuz? Yorumlarda buluşalım 👇',
         };
       }
@@ -1460,18 +1479,20 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
     );
 
     const defaultKeywords = [
-      `${customKeyword || niche} podcast`,
       `${customKeyword || niche} röportaj`,
-      `${customKeyword || niche} önemli konuşma`,
+      `${customKeyword || niche} gerçek hayat hikayesi`,
+      `${customKeyword || niche} podcast sohbet`,
+      'gerçek hayat hikayeleri röportaj',
+      'sokak röportajı hayat dersi',
     ];
 
     try {
       const prompt = `Sen uzman bir Sosyal Medya Trend Avcısısın.
-Kategori: "${niche}"
+Hedef Niş / Kategori: "${niche}"
 ${customKeyword ? `Özel Arama Terimi: "${customKeyword}"` : ''}
 
-YouTube üzerinde Creative Commons lisanslı, yüksek izlenme ve kesit potansiyeline sahip videoları bulmak için 3 adet arama sorgusu üret.
-Sorgular YouTube arama motoruna yazılacak şekilde Türkçe veya evrensel olsun (Örn: "yapay zeka podcast", "hayat dersleri röportaj").
+GÖREV: YouTube üzerinde Creative Commons (CC-BY) lisanslı, yüksek izlenme potansiyeline sahip, özellikle GERÇEK HAYAT HİKAYELERİ, SAMİMİ RÖPORTAJLAR, İTİRAFLAR, İLHAM VERİCİ YAŞAM DERSLERİ ve DERİN PODCAST SOHBETLERİ içeren videoları bulmak için 3 adet vurucu arama sorgusu üret.
+Sorgular doğrudan YouTube arama çubuğuna yazılacak şekilde Türkçe olsun (Örn: "gerçek hayat hikayesi röportaj", "yaşam mücadelesi podcast", "sokak röportajı hayat dersi").
 
 SADECE JSON FORMATINDA DİZİ VER:
 ["arama 1", "arama 2", "arama 3"]`;
@@ -1620,6 +1641,35 @@ SADECE JSON FORMATINDA DİZİ VER:
         safetyScore: 0,
         attribution: '',
         notes: 'Video Standart YouTube Lisansı taşıyor (CC-BY değil).',
+      };
+    }
+
+    // 4. Brand Safety Policy Check: Reject political propaganda, terrorism, and +18 content
+    const brandSafetyWords = [
+      'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'zafer partisi',
+      'erdoğan', 'erdogan', 'özgür özel', 'kılıçdaroğlu', 'siyaset', 'seçim', 'milletvekili', 'meclis',
+      'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
+      'öcalan', 'ocalan', 'kandil', 'kürt hareketi', 'bölücü',
+      '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak',
+      'vahşet', 'kanlı', 'cinayet', 'katliam', 'infaz', 'intihar', 'tecavüz'
+    ];
+
+    const isViolatingSafety = brandSafetyWords.some((word) => textToCheck.includes(word));
+    if (isViolatingSafety) {
+      this.emitMessage(
+        options,
+        'copyright_auditor',
+        auditor.name,
+        auditor.model,
+        'security',
+        `❌ [GÜVENLİK VE POLİTİKA REDDİ]: "${video.title}" videosu siyasi propaganda, terör veya +18 içerik filtresine takıldı! Kanal güvenliği gereği video derhal ELENDİ.`
+      );
+      return {
+        approved: false,
+        monetizationSafe: false,
+        safetyScore: 0,
+        attribution: '',
+        notes: 'Siyasi propaganda, terörizm veya +18 hassas içerik filtresi nedeniyle reddedildi.',
       };
     }
 
@@ -1944,6 +1994,275 @@ SADECE JSON FORMATINDA DİZİ VER:
       candidates: finalPitches,
       meetingSummary: summary,
     };
+  }
+
+  /**
+   * 🎬 PART 1 & PART 2 CLIFFHANGER SERIES SPLITTER
+   * Splits a long podcast/video (>= 60s) into sequential viral story parts.
+   * Finds the dramatic cliffhanger breaking point where Part 1 ends with suspense,
+   * compelling viewers to watch Part 2.
+   */
+  public async generateCliffhangerSeriesClips(
+    transcript: TranscriptResult,
+    options: {
+      partsCount?: number; // 2 or 3 (default: 2)
+      baseTitle?: string;
+      overlayBanner?: boolean;
+      ollamaHost?: string;
+      onMessage?: (message: AgencyMessage) => void;
+      onProgress?: (progress: AgencyProgressEvent) => void;
+      onLog?: (log: string) => void;
+    } = {}
+  ): Promise<ViralClip[]> {
+    const partsCount = Math.max(2, Math.min(3, options.partsCount || 2));
+    const totalDuration = transcript.duration || 180;
+    const seriesGroupId = `series_${Date.now()}`;
+
+    // Announce via Cliffhanger Qwen
+    this.emitMessage(
+      options as any,
+      'cliffhanger_architect',
+      'Cliffhanger Qwen',
+      'qwen3:8b',
+      'thought',
+      `Seri kurgu motoru devrede! Transkripti (${Math.round(totalDuration)} sn) kelime kelime analiz ediyorum. Tam hikayenin en heyecanlı kırılma anında (cliffhanger) Part 1'i bitirip, 'Devamı Part 2'de' merak kancası oluşturacağım.`
+    );
+
+    options.onProgress?.({
+      phase: 'hook_design',
+      percent: 65,
+      message: `Cliffhanger Qwen dramatik kırılma noktasını ve Part 1 / Part 2 sınırlarını hesaplıyor...`,
+      activeAgent: 'cliffhanger_architect',
+    });
+
+    const segments = transcript.segments || [];
+    let detectedPart1End = 50;
+    let detectedPart2End = Math.min(totalDuration, 110);
+    let cliffhangerPhrase = 've sonra ne olduğunu asla tahmin edemezsiniz...';
+    let baseTheme = (options.baseTitle || 'Büyük Keşif').replace(/[\r\n]+/g, ' ').trim().slice(0, 35);
+
+    // 1. Try local Ollama analysis for finding the emotional cliffhanger
+    let llmSuccess = false;
+    try {
+      const host = options.ollamaHost || 'http://localhost:11434';
+      const prompt = `Sen uzman bir TikTok/Shorts Anlatı & Kurgu Yönetmenisin (Cliffhanger Architect).
+GÖREV: Aşağıdaki transkripti tam olarak ${partsCount} parçaya (Part 1, Part 2...) böl.
+
+ÖNEMLİ KURALLAR:
+1. Cümle ortasından ASLA kesme! Anlam bütünlüğü olan yerde kes.
+2. Part 1 mutlaka hikayenin EN HEYECANLI, MERAK UYANDIRAN kırılma anında (Cliffhanger) bitmeli! (Örn: soru işaretiyle, 've o an anladım ki...', 'ama bilmediğimiz bir şey vardı...' gibi).
+3. Part 1 süresi: 40 - 65 saniye arasında olmalı.
+4. Part 2, Part 1'in bittiği yerden devam edip açıklamayı/sonucu vermeli (40 - 65 saniye).
+${partsCount === 3 ? '5. Part 3 final darbesini vurmalı.' : ''}
+
+TRANSKRİPT ÖZETİ (İlk 3 dakika):
+${segments.slice(0, 35).map((s) => `[${Math.round(s.start)}s-${Math.round(s.end)}s]: ${s.text}`).join('\n')}
+
+SADECE ŞU JSON FORMATINDA CEVAP VER:
+{
+  "theme": "Kısa Çarpıcı Konu Başlığı",
+  "parts": [
+    {
+      "partNumber": 1,
+      "title": "Hikaye Başlangıcı (Part 1)",
+      "start_seconds": 0,
+      "end_seconds": 52,
+      "cliffhanger_phrase": "ve kapıyı açtığımda gördüğüm şey...",
+      "hook_sentence": "İlk 3 saniye açılış cümlesi"
+    },
+    {
+      "partNumber": 2,
+      "title": "Gerçek Ortaya Çıktı (Part 2)",
+      "start_seconds": 51,
+      "end_seconds": 105,
+      "cliffhanger_phrase": "işte bu yüzden asla vazgeçmeyin",
+      "hook_sentence": "Part 2 devam açılışı"
+    }
+  ]
+}`;
+
+      const res = await fetch(`${host}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen3:8b',
+          prompt,
+          stream: false,
+          format: 'json',
+          options: { temperature: 0.2 },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const parsed = JSON.parse(data.response);
+        if (parsed && Array.isArray(parsed.parts) && parsed.parts.length >= 2) {
+          baseTheme = parsed.theme || baseTheme;
+          detectedPart1End = Math.max(35, Math.min(65, Number(parsed.parts[0].end_seconds) || 52));
+          cliffhangerPhrase = parsed.parts[0].cliffhanger_phrase || cliffhangerPhrase;
+          if (parsed.parts[1]) {
+            detectedPart2End = Math.max(detectedPart1End + 35, Math.min(totalDuration, Number(parsed.parts[1].end_seconds) || (detectedPart1End + 55)));
+          }
+          llmSuccess = true;
+        }
+      }
+    } catch (e: any) {
+      options.onLog?.(`[Cliffhanger] Yerel LLM analiz notu: ${e.message}, kural tabanlı akıllı kanca motoruna geçiliyor.`);
+    }
+
+    // 2. Intelligent Punctuation & Rhetorical Boundary Fallback
+    if (!llmSuccess && segments.length > 0) {
+      // Look for dramatic punctuation (. ! ?) between 38s and 65s
+      const p1Candidates = segments.filter((s) => s.end >= 38 && s.end <= 65);
+      if (p1Candidates.length > 0) {
+        const dramatic = p1Candidates.find((s) => /[?!]|\.\.\./.test(s.text)) || p1Candidates[p1Candidates.length - 1];
+        detectedPart1End = Math.round(dramatic.end);
+        cliffhangerPhrase = dramatic.text.slice(-50);
+      } else {
+        detectedPart1End = Math.min(55, Math.round(totalDuration / partsCount));
+      }
+
+      const p2Candidates = segments.filter((s) => s.end >= detectedPart1End + 38 && s.end <= detectedPart1End + 65);
+      if (p2Candidates.length > 0) {
+        const dramatic2 = p2Candidates.find((s) => /[.?!]/.test(s.text)) || p2Candidates[p2Candidates.length - 1];
+        detectedPart2End = Math.round(dramatic2.end);
+      } else {
+        detectedPart2End = Math.min(totalDuration, detectedPart1End + 55);
+      }
+
+      if (segments[0]) {
+        const words = segments[0].text.trim().split(/\s+/).slice(0, 5).join(' ');
+        if (words.length > 5) baseTheme = words;
+      }
+    }
+
+    const formatTime = (secs: number) => {
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const resultClips: ViralClip[] = [];
+
+    // --- PART 1 ---
+    const part1Start = 0;
+    const part1End = detectedPart1End;
+    const part1Banner = `PART 1 | Devamı Part 2'de 👇`;
+    const part1Title = `${baseTheme} (Part 1)`;
+
+    resultClips.push({
+      clip_id: 1,
+      title: part1Title,
+      start_time: formatTime(part1Start),
+      end_time: formatTime(part1End),
+      start_seconds: part1Start,
+      end_seconds: part1End,
+      duration_seconds: part1End - part1Start,
+      hook_sentence: `Kırılma Anı: "${cliffhangerPhrase}" | Devamı Part 2'de!`,
+      virality_score: 96,
+      reason: `Hikayenin en merak uyandırıcı cliffhanger anında sonlanan yüksek retention'lı açılış.`,
+      keywords: ['part1', 'shorts', 'hikaye', 'podcast'],
+      status: 'pending',
+      isSeries: true,
+      partNumber: 1,
+      totalParts: partsCount,
+      seriesGroupId,
+      seriesBannerText: part1Banner,
+      socialMetadata: {
+        titles: [
+          `${part1Title} #Shorts`,
+          `Bunu Beklemiyordum! | ${part1Title}`,
+          `Sonuna Kadar İzleyin 👇 | ${part1Title}`,
+        ],
+        description: `⚡ ${cliffhangerPhrase}\n\n👉 Devamı Part 2'de profilimizde yayında!\n\nTakip etmeyi ve beğenmeyi unutmayın!`,
+        hashtags: ['#Shorts', '#Part1', '#Viral', '#Hikaye', '#Podcast'],
+        callToAction: 'Devamı için profildeki Part 2\'yi izleyin! 👇',
+      },
+    });
+
+    // --- PART 2 ---
+    const part2Start = Math.max(0, part1End - 1.5); // 1.5s seamless conversational bridge overlap
+    const part2End = detectedPart2End;
+    const part2Banner = partsCount === 2 ? `PART 2 (FİNAL) | Başı Profilde 👈` : `PART 2 | Devamı Part 3'te 👇`;
+    const part2Title = `${baseTheme} (Part 2)`;
+
+    resultClips.push({
+      clip_id: 2,
+      title: part2Title,
+      start_time: formatTime(part2Start),
+      end_time: formatTime(part2End),
+      start_seconds: part2Start,
+      end_seconds: part2End,
+      duration_seconds: part2End - part2Start,
+      hook_sentence: `Part 1'in devamı: Hikayenin can alıcı açıklaması ve finali.`,
+      virality_score: 93,
+      reason: `Part 1'den gelen meraklı kitleyi yakalayan ve tam izlenme sağlayan çözüm kesiti.`,
+      keywords: ['part2', 'shorts', 'devami', 'podcast'],
+      status: 'pending',
+      isSeries: true,
+      partNumber: 2,
+      totalParts: partsCount,
+      seriesGroupId,
+      seriesBannerText: part2Banner,
+      socialMetadata: {
+        titles: [
+          `${part2Title} #Shorts`,
+          `Gerçek Ortaya Çıktı | ${part2Title}`,
+          `İşte Cevap! | ${part2Title}`,
+        ],
+        description: `👈 Part 1 profilde yayında!\n\n${part2Title} - Merakla beklenen devam bölümü.\n\nTakip edip beğenmeyi unutmayın!`,
+        hashtags: ['#Shorts', '#Part2', '#Final', '#Hikaye', '#Podcast'],
+        callToAction: 'Part 1\'i kaçırdıysanız profilden izleyin! 👈',
+      },
+    });
+
+    // --- PART 3 (Optional) ---
+    if (partsCount === 3 && totalDuration > detectedPart2End + 30) {
+      const part3Start = Math.max(0, part2End - 1.5);
+      const part3End = Math.min(totalDuration, part2End + 55);
+      const part3Banner = `PART 3 (FİNAL) | Part 1 & 2 Profilde 🔥`;
+      const part3Title = `${baseTheme} (Part 3 - Final)`;
+
+      resultClips.push({
+        clip_id: 3,
+        title: part3Title,
+        start_time: formatTime(part3Start),
+        end_time: formatTime(part3End),
+        start_seconds: part3Start,
+        end_seconds: part3End,
+        duration_seconds: part3End - part3Start,
+        hook_sentence: `Serinin büyük finali ve çıkarılan ders.`,
+        virality_score: 91,
+        reason: `3 parçalık serinin zirve noktası ve takipçi dönüştürme kapanışı.`,
+        keywords: ['part3', 'final', 'shorts', 'podcast'],
+        status: 'pending',
+        isSeries: true,
+        partNumber: 3,
+        totalParts: 3,
+        seriesGroupId,
+        seriesBannerText: part3Banner,
+        socialMetadata: {
+          titles: [
+            `${part3Title} #Shorts`,
+            `Ve Büyük Final! | ${part3Title}`,
+          ],
+          description: `🔥 3 parçalık serinin finali!\n\nPart 1 ve Part 2 profilimizde yayında.\n\nAbone olmayı unutmayın!`,
+          hashtags: ['#Shorts', '#Part3', '#Final', '#Podcast'],
+          callToAction: 'Önceki bölümler için profilimize göz atın! 🔥',
+        },
+      });
+    }
+
+    this.emitMessage(
+      options as any,
+      'cliffhanger_architect',
+      'Cliffhanger Qwen',
+      'qwen3:8b',
+      'action',
+      `✓ Seri Kurgu Tamamlandı! Video ${resultClips.length} ardışık parçaya bölündü.\n• Part 1 [0s - ${part1End}s]: "${part1Banner}" (Cliffhanger Kırılma Noktası)\n• Part 2 [${part2Start}s - ${part2End}s]: "${part2Banner}" (Sonuç ve Çözüm)`
+    );
+
+    return resultClips;
   }
 }
 

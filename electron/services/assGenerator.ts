@@ -45,7 +45,8 @@ export function generateAssSubtitles(
   clipEndSec: number,
   config: SubtitleStyleConfig,
   outputPath: string,
-  aspectRatio: '9:16' | '16:9' | '1:1' = '9:16'
+  aspectRatio: '9:16' | '16:9' | '1:1' = '9:16',
+  bannerText?: string
 ): string {
   // Filter words strictly within this clip
   const clipWords = words
@@ -83,6 +84,7 @@ PlayResY: ${playResY}
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: TikTokDefault,${fontName},${fontSize},${primaryCol},${highlightCol},${outlineCol},&H80000000&,-1,0,0,0,100,100,2,0,1,${outlineWidth},${shadowDepth},${config.alignment || 2},60,60,${marginV},1
+Style: SeriesBanner,${fontName},${isLandscape ? 38 : 46},&H00FFFFFF&,&H00000000&,&H00000000&,&H90000000&,-1,0,0,0,100,100,2,0,3,4,0,8,40,40,${isLandscape ? 60 : 160},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -130,6 +132,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       );
     }
   });
+
+  if (bannerText && bannerText.trim().length > 0) {
+    const totalDuration = Math.max(1, clipEndSec - clipStartSec);
+    const sanitizedBanner = bannerText.trim().replace(/[\r\n]+/g, ' ');
+    events.unshift(
+      `Dialogue: 2,0:00:00.00,${formatAssTime(totalDuration)},SeriesBanner,,0,0,0,,{\\b1\\c&H00D7FF&\\3c&H000000&\\bord4\\shad0}⚡ ${sanitizedBanner}`
+    );
+  }
 
   const fullContent = header + events.join('\n') + '\n';
   fs.writeFileSync(outputPath, fullContent, 'utf-8');

@@ -580,22 +580,33 @@ ${transcriptFormatted}
     clip: ViralClip,
     options: LLMAnalysisOptions
   ): Promise<SocialCopyMetadata> {
-    const prompt = `Sen TikTok, Instagram Reels ve YouTube Shorts için uzman bir viral başlık ve büyüme stratejistisin.
-Sana bilgileri verilen klip için izleyicinin parmağını ekranda durduracak, maksimum tıklama (CTR) getirecek 3 ADET BİRBİRİNDEN TAMAMEN FARKLI TÜRKÇE BAŞLIK ve açıklama paketi hazırla.
+    const dialogueContext = clip.transcriptSnippet || clip.hook_sentence || clip.title;
+    const prompt = `Sen YouTube Shorts, TikTok ve Reels için çalışan profesyonel bir Kıdemli Video Editörü, Röportaj Yazarı ve Büyüme Uzmanısın.
+Sana bilgileri ve konuşma dökümü verilen klip için YouTube algoritmasını domine edecek, izleyiciyi kitleyecek 3 ADET BİRBİRİNDEN TAMAMEN FARKLI TÜRKÇE BAŞLIK ve zengin bir açıklama paketi hazırla.
 
-KLİP BİLGİLERİ:
+KLİP VE KONUŞMA BİLGİLERİ:
 - Mevcut Başlık: ${clip.title}
 - Giriş Kancası (Hook): ${clip.hook_sentence || clip.title}
+- Konuşulan Diyalog / Kesit: "${dialogueContext}"
 - Seçilme Sebebi / Konu: ${clip.reason}
 - Klip Süresi: ${clip.duration_seconds} saniye
 - Anahtar Kelimeler: ${clip.keywords?.join(', ') || ''}
 
-TAVİZSİZ BAŞLIK KURALLARI:
-1. 3 başlık da birbirinden TAMAMEN FARKLI bir açıdan yazılmalıdır:
-   - Başlık 1 (Vurucu İtiraf/Kanca): Konuşmadaki kilit cümleye veya sonuca odaklanan çarpıcı başlık.
-   - Başlık 2 (Merak/Soru): İzleyiciyi soruyla merakta bırakan başlık (örn: Gerçekten böyle mi?).
-   - Başlık 3 (Şok/Uyarı/Zıt Köşe): "Bunu kimse söylemiyor" veya "Büyük hata" temalı iddialı başlık.
-2. Jenerik, boş veya birbirinin kopyası başlıklar KESİNLİKLE YASAKTIR. Doğrudan klibin konusunu içermelidir.
+KESİNLİKLE UYULMASI GEREKEN TAVİZSİZ KURALLAR:
+1. KESİNLİKLE HİÇBİR UYGULAMA, YAZILIM, AI ARACI, "AUTOCUT", "AUTOCLIP" VEYA DIŞ BAĞLANTI / LİNK (GitHub, web sitesi vs.) YAZMA!
+   Uygulamayı veya yazılımı tanıtan açıklamalar KESİNLİKLE YASAKTIR. YouTube politikası gereği link eklenemez, spam filtresine takılır.
+2. AÇIKLAMA TAMAMEN VE SADECE VİDEOYLA ALAKALI OLMALIDIR:
+   - YouTube arama motorunda (SEO) organik görünürlük sağlamak için videonun konusunu, anlatılan hikayeyi ve tecrübeyi derinlemesine açıklayın.
+   - Konuşulanlardan ARADAN KESİTLER ("tırnak içinde doğrudan diyalog alıntıları") içermelidir (örn: "Konuşmacının '...' sözleriyle dikkat çektiği bu kesitte...").
+   - 2-3 akıcı paragraf:
+     • 1. Paragraf: Konuşmacının "..." sözleriyle başlayan olayın veya hikayenin çarpıcı özeti.
+     • 2. Paragraf: Anlatılan hayat tecrübesi, röportajın can alıcı noktası ve izleyiciye kattığı değer.
+     • 3. Paragraf: İzleyiciye soru soran tartışma çağrısı (CTA).
+3. 3 BAŞLIK DA BİRBİRİNDEN TAMAMEN FARKLI AÇILARLA YAZILMALIDIR:
+   - Başlık 1 (Vurucu İtiraf / Merak Boşluğu): Konuşmadaki en çarpıcı cümleye odaklanan kanca başlık.
+   - Başlık 2 (Soru / Gizem): İzleyiciyi soruyla merakta bırakan başlık (örn: Gerçekten böyle mi?).
+   - Başlık 3 (Şok / Zıt Görüş): "Bunu kimse söylemiyor" veya zıt köşe temalı iddialı başlık.
+4. HASHTAGLER: Sadece ve sadece konuya özel, niş ve viral etiketler (en az 10 adet). Asla app veya link etiketi içermemelidir.
 
 GÖREVİN VE ÇIKTI FORMATI:
 Aşağıdaki JSON şemasında KESİNLİKLE geçerli bir JSON döndür:
@@ -605,11 +616,11 @@ Aşağıdaki JSON şemasında KESİNLİKLE geçerli bir JSON döndür:
     "2. Konuya özel ikinci soru/merak başlığı?",
     "3. Konuya özel üçüncü şok/uyarı başlığı!"
   ],
-  "description": "Video hakkında izleyiciyi meraklandıracak 2-3 cümlelik, emojilerle zenginleştirilmiş akıcı açıklama metni.",
-  "callToAction": "İzleyiciden yorum veya kaydetme isteyen güçlü bir çağrı (örn: Sizce haklı mı? Yorumlarda buluşalım 👇)",
+  "description": "🔥 \"...\" sözleriyle başlayan bu kesitte konuşmacının aktardığı derin detaylar ve yaşam tecrübesi ele alınıyor. Gerçek hayatın içinden çıkarılacak en kilit ders.\\n\\nSizce konuşmacı bu tespitinde haklı mı? Düşüncelerinizi yorumlarda paylaşmayı unutmayın! 👇",
+  "callToAction": "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım! 👇",
   "hashtags": [
-    "#shorts", "#viral", "#fyp", "#keşfet", "#reels", "#tiktok",
-    "#trend", "#video"
+    "#Shorts", "#Röportaj", "#Hikaye", "#Keşfet", "#Viral", "#Podcast",
+    "#DerinSohbet", "#Yaşam", "#Gündem", "#Farkındalık"
   ]
 }
 
@@ -633,22 +644,37 @@ SADECE JSON döndür. Başka hiçbir açıklama ekleme.`;
       const rawTitles = Array.isArray(parsed.titles) ? parsed.titles : [];
       const distinctTitles = this.ensureThreeDiverseTitles(rawTitles, clip);
 
+      let cleanDesc = parsed.description || `🔥 "${clip.hook_sentence || clip.title}"\n\nBu kesitte konuşmacının aktardığı samimi detaylar ve tecrübeler anlatılıyor.`;
+      // Strict regex sanitation: Remove all URLs, app promo tags, and external links
+      cleanDesc = cleanDesc
+        .replace(/https?:\/\/[^\s]+/gi, '')
+        .replace(/⚡\s*Bu video AutoClip[^\n]*/gi, '')
+        .replace(/🚀\s*Proje & Kaynak Kod:[^\n]*/gi, '')
+        .replace(/#AutoClipAI/gi, '#Keşfet')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      const sanitizedTags = Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
+        ? parsed.hashtags
+            .map((h: string) => (h.startsWith('#') ? h : `#${h}`))
+            .filter((h: string) => !/autoclip|autocut/i.test(h))
+        : ['#Shorts', '#Röportaj', '#Hikaye', '#Keşfet', '#Viral', '#Podcast', '#DerinSohbet', '#Gündem'];
+
       return {
         titles: distinctTitles,
-        description: parsed.description || clip.hook_sentence || 'Bu videodaki önemli anı kaçırmayın!',
-        callToAction: parsed.callToAction || 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda belirtin! 👇',
-        hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
-          ? parsed.hashtags.map((h: string) => (h.startsWith('#') ? h : `#${h}`))
-          : ['#shorts', '#viral', '#fyp', '#reels', '#keşfet', '#trend'],
+        description: cleanDesc,
+        callToAction: parsed.callToAction || 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım! 👇',
+        hashtags: sanitizedTags,
       };
     } catch (e: any) {
       console.warn('[LLMService] Social copy parsing failed, fallback used:', e.message);
       const fallbackTitles = this.ensureThreeDiverseTitles([], clip);
+      const quote = clip.transcriptSnippet ? clip.transcriptSnippet.slice(0, 140) : (clip.hook_sentence || clip.title);
       return {
         titles: fallbackTitles,
-        description: `${clip.hook_sentence || clip.title}\n\nDaha fazlası için takip etmeyi unutmayın!`,
-        callToAction: 'Siz ne düşünüyorsunuz? Yorumlarda buluşalım! 👇',
-        hashtags: ['#shorts', '#viral', '#fyp', '#reels', '#keşfet', '#trend', '#video', '#öneçıkar'],
+        description: `🔥 "${quote}..."\n\nBu kesitte konuşmacının aktardığı sarsıcı detaylar ve yaşam tecrübesi ele alınıyor. Gerçek hayatın içinden çıkarılacak en kilit dersler.\n\nSizce konuşmacı bu tespitinde haklı mı? Düşüncelerinizi yorumlarda paylaşmayı unutmayın! 👇`,
+        callToAction: 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım! 👇',
+        hashtags: ['#Shorts', '#Röportaj', '#Hikaye', '#Keşfet', '#Viral', '#Podcast', '#DerinSohbet', '#Gündem'],
       };
     }
   }

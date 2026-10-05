@@ -484,19 +484,23 @@ export class GoogleAuthService {
     }
 
     let description = payload.description || '';
-    if (payload.isShort && !description.toLowerCase().includes('#shorts')) {
-      description = `${description}\n\n#Shorts #Viral #AutoClipAI`;
-    }
+    // Strip external links (e.g. https://... or http://...) per YouTube Shorts unclickable link & spam policy
+    description = description.replace(/https?:\/\/[^\s]+/gi, '').trim();
+    // Strip any residual app promotional sentences
+    description = description
+      .replace(/⚡\s*Bu video AutoClip[^\n]*/gi, '')
+      .replace(/🚀\s*Proje & Kaynak Kod:[^\n]*/gi, '')
+      .replace(/#AutoClipAI/gi, '#Keşfet')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
 
-    // Append open-source project promotion marked as advertisement / attribution
-    const promoLink = 'https://github.com/Tolgakabadayi/auto-clip-studio';
-    if (!description.includes(promoLink)) {
-      description += `\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: ${promoLink} (Reklam / Açık Kaynak Projemiz)`;
+    if (payload.isShort && !description.toLowerCase().includes('#shorts')) {
+      description = `${description}\n\n#Shorts #Viral #Keşfet`;
     }
 
     const tags = payload.tags && payload.tags.length > 0
-      ? payload.tags
-      : ['Shorts', 'AI', 'AutoClip', 'Viral'];
+      ? payload.tags.map((t) => t.replace(/^#/, '')).filter((t) => !/autoclip|autocut/i.test(t))
+      : ['Shorts', 'Viral', 'Keşfet', 'Röportaj', 'Hikaye'];
 
     console.log(`[GoogleAuthService] Starting YouTube upload for: ${videoTitle} (${Math.round(fileSize / (1024 * 1024))}MB)`);
 

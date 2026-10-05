@@ -318,6 +318,23 @@ export const INITIAL_OFFICE_AGENTS: AgentOfficeNode[] = [
     isExtra: true,
     enabled: true,
   },
+  {
+    role: 'cliffhanger_architect',
+    name: 'Cliffhanger Qwen',
+    model: 'qwen3:8b',
+    avatar: '🎬',
+    department: 'Seri Kurgu & Cliffhanger',
+    title: 'Part 1 / Part 2 Seri Mimarı',
+    description: '60sn+ uzun videolardan merak uyandıran kırılma anında (cliffhanger) bölerek izleyiciyi profile yönlendiren Part 1 ve Part 2 serileri üretir.',
+    accentColor: 'text-amber-400',
+    badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    borderColor: 'border-amber-500/40 hover:border-amber-400',
+    glowColor: 'shadow-amber-500/30',
+    workDescription: 'Hikaye gerilim eğrisini tarıyor, cliffhanger kırılma noktasında Part 1 ve Part 2 kesimlerini hazırlıyor...',
+    deliverableTitle: 'Cliffhanger Seri Kesitleri & Merak Kancası Hazır',
+    isExtra: true,
+    enabled: true,
+  },
 ];
 
 export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({

@@ -888,7 +888,8 @@ ipcMain.handle('pipeline:start', async (_event, options: PipelineOptions) => {
         clip.end_seconds,
         subtitleConfig,
         assPath,
-        options.aspectRatio || '9:16'
+        options.aspectRatio || '9:16',
+        clip.seriesBannerText || (clip.isSeries && clip.partNumber ? (clip.partNumber === (clip.totalParts || 2) ? `PART ${clip.partNumber} (FİNAL) | Başı Profilde 👈` : `PART ${clip.partNumber} | Devamı Part ${clip.partNumber + 1}'de 👇`) : undefined)
       );
 
       // 4b. Optional Smart Face Tracking 9:16 Analysis (only in 9:16 mode)
@@ -1030,7 +1031,8 @@ ipcMain.handle('pipeline:render-clip', async (_event, payload: {
         clip.end_seconds,
         options.subtitleConfig,
         assPath,
-        options.aspectRatio || '9:16'
+        options.aspectRatio || '9:16',
+        clip.seriesBannerText || (clip.isSeries && clip.partNumber ? (clip.partNumber === (clip.totalParts || 2) ? `PART ${clip.partNumber} (FİNAL) | Başı Profilde 👈` : `PART ${clip.partNumber} | Devamı Part ${clip.partNumber + 1}'de 👇`) : undefined)
       );
     }
   }

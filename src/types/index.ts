@@ -54,6 +54,12 @@ export interface ViralClip {
   youtubeVideoId?: string;
   youtubeUrl?: string;
   sourceVideoId?: string;
+  isSeries?: boolean;
+  partNumber?: number;
+  totalParts?: number;
+  seriesGroupId?: string;
+  seriesBannerText?: string;
+  transcriptSnippet?: string;
 }
 
 export interface SubtitleStyleConfig {
@@ -106,6 +112,10 @@ export interface PipelineOptions {
   agencyMode?: boolean;
   agencyAgents?: AgencyAgentConfig[];
   enableSilenceRemoval?: boolean; // WyattBlue/auto-editor style silence & dead air cutter
+  seriesMode?: boolean;
+  seriesPartNumber?: number;
+  seriesTotalParts?: number;
+  seriesBannerText?: string;
 }
 
 export type PipelineStep =
@@ -162,6 +172,7 @@ export type AgencyRole =
   | 'sound_designer'
   | 'translator_multilingual'
   | 'hook_architect'
+  | 'cliffhanger_architect'
   | 'security_supervisor'
   | 'youtube_manager';
 
@@ -221,6 +232,11 @@ export interface AutopilotSettings {
   autoPublishYouTube?: boolean; // Automatically upload to YouTube Shorts when slot arrives
   youtubePrivacy?: 'public' | 'unlisted' | 'private';
   prepareMinutesBeforeSlot?: number; // Minimum 10 mins before slot, default 15
+  seriesModeEnabled?: boolean; // Seri & Partlı Shorts Modu (Part 1, Part 2, ...)
+  seriesPartsCount?: number; // Kaç part üretilsin (2 veya 3, varsayılan: 2)
+  seriesIntervalMinutes?: number; // Partlar arası yayın gecikmesi (dakika, varsayılan: 55)
+  seriesOverlayBanner?: boolean; // Video üstüne "Part 1 | Devamı Part 2'de 👇" rozeti ekle (varsayılan: true)
+  minSourceDurationSeconds?: number; // Kaynak video minimum süresi (varsayılan: 60)
 }
 
 export interface CCVideoCandidate {
@@ -289,6 +305,11 @@ export interface ScheduledClipPackage {
   youtubeVideoId?: string;
   youtubeUrl?: string;
   uploadError?: string;
+  isSeries?: boolean;
+  partNumber?: number;
+  totalParts?: number;
+  seriesGroupId?: string;
+  seriesBannerText?: string;
 }
 
 export interface AutopilotProgressInfo {

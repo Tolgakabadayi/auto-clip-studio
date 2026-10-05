@@ -141,8 +141,18 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
     if (metadata && metadata.titles && metadata.titles.length > 0) {
       const chosen = metadata.titles[selectedTitleIndex] || metadata.titles[0];
       setCustomTitle(chosen.includes('#Shorts') ? chosen : `${chosen} #Shorts`);
+      const cleanDesc = (metadata.description || '')
+        .replace(/https?:\/\/[^\s]+/gi, '')
+        .replace(/⚡\s*Bu video AutoClip[^\n]*/gi, '')
+        .replace(/🚀\s*Proje & Kaynak Kod:[^\n]*/gi, '')
+        .replace(/#AutoClipAI/gi, '#Keşfet')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      const tags = (metadata.hashtags || []).filter((h: string) => !/autoclip|autocut/i.test(h));
+      const hasShorts = tags.some((t: string) => t.toLowerCase() === '#shorts');
+      const tagStr = hasShorts ? tags.join(' ') : `${tags.join(' ')} #Shorts`;
       setCustomDescription(
-        `${metadata.description}\n\n${metadata.callToAction}\n\n${metadata.hashtags.join(' ')}\n\n#Shorts #Viral #AutoClipAI`
+        `${cleanDesc}\n\n${metadata.callToAction || ''}\n\n${tagStr}`.trim()
       );
     } else if (clip) {
       setCustomTitle(clip.title.includes('#Shorts') ? clip.title : `${clip.title} #Shorts`);

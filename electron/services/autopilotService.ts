@@ -33,11 +33,32 @@ export class AutopilotService {
   private settings: AutopilotSettings;
   private state: AutopilotState;
   private processedVideoIds: Set<string> = new Set();
+  private processedChannels: Set<string> = new Set();
   private storageDir: string;
   private configFilePath: string;
   private archiveFilePath: string;
   private schedulerTimer: NodeJS.Timeout | null = null;
   private isBusy = false;
+
+  // Brand Safety Blacklist: Zero tolerance for political polemics, terrorism, ethnic conflict, and +18 / adult content
+  private static BRAND_SAFETY_BLACKLIST = [
+    // Political parties, political figures, elections & propaganda
+    'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'iyip', 'zafer partisi',
+    'erdoğan', 'erdogan', 'recep tayyip', 'özgür özel', 'kılıçdaroğlu', 'mansur yavaş', 'ekrem imamoğlu',
+    'devlet bahçeli', 'selahattin demirtaş', 'siyaset', 'siyasi', 'seçim', 'milletvekili', 'meclis',
+    'tbmm', 'belediye başkanı', 'propaganda', 'hükümet', 'muhalefet', 'koalisyon', 'bakanlık',
+
+    // Terrorism, militant organizations, separatist / ethnic propaganda
+    'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
+    'gerilla', 'öcalan', 'ocalan', 'kandil', 'halkların demokratik', 'kürt hareketi', 'bölücü',
+
+    // +18, Adult, NSFW, vulgar content
+    '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak', 'mastürbasyon',
+    'escort', 'jigolo', 'lezbiyen', 'gay', 'fahişe', 'aldatma itirafı +18',
+
+    // Violence, gore, brutality, severe crimes
+    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence'
+  ];
 
   // Callbacks for broadcasting
   public onStateChange?: (state: AutopilotState) => void;
@@ -73,10 +94,10 @@ export class AutopilotService {
     const defaultArchiveDir = path.join(this.storageDir, 'Publish_Archive');
     fs.mkdirSync(defaultArchiveDir, { recursive: true });
 
-    // Default settings
+    // Default settings: Focused on Interviews & Real Life Stories + Series Module Ready
     this.settings = {
       enabled: false,
-      selectedNiche: 'Yapay Zeka & Teknoloji',
+      selectedNiche: 'Röportaj & Gerçek Hayat Hikayeleri',
       customKeyword: '',
       postingSlots: ['12:30', '18:30', '21:15'],
       clipsPerVideo: 1,
@@ -88,6 +109,11 @@ export class AutopilotService {
       autoPublishYouTube: true,
       youtubePrivacy: 'public',
       prepareMinutesBeforeSlot: 15,
+      seriesModeEnabled: false,
+      seriesPartsCount: 2,
+      seriesIntervalMinutes: 55,
+      seriesOverlayBanner: true,
+      minSourceDurationSeconds: 60,
     };
 
     // Initial state
@@ -104,6 +130,32 @@ export class AutopilotService {
     };
 
     this.loadPersistence();
+  }
+
+  /**
+   * Check text against brand safety blacklist (siyasi / terör / +18 / şiddet)
+   */
+  public checkBrandSafety(text: string): { safe: boolean; reason?: string } {
+    if (!text) return { safe: true };
+    const lower = text.toLowerCase();
+    for (const banned of AutopilotService.BRAND_SAFETY_BLACKLIST) {
+      const regex = new RegExp(`(^|[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ])${banned}([^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]|$)`, 'i');
+      if (regex.test(lower) || lower.includes(banned)) {
+        return { safe: false, reason: banned };
+      }
+    }
+    return { safe: true };
+  }
+
+  /**
+   * Channel Diversity: Check if a channel has been recently used in previous uploads or packages
+   */
+  public isChannelRecentlyUsed(channelName: string): boolean {
+    if (!channelName) return false;
+    const clean = channelName.trim().toLowerCase();
+    if (this.processedChannels.has(clean)) return true;
+    const recent = this.state.packages.slice(0, 10);
+    return recent.some((p) => (p.sourceVideo?.channel || '').trim().toLowerCase() === clean);
   }
 
   /**
@@ -130,9 +182,19 @@ export class AutopilotService {
         if (Array.isArray(parsed.processedIds)) {
           this.processedVideoIds = new Set(parsed.processedIds);
         }
+        if (Array.isArray(parsed.processedChannels)) {
+          this.processedChannels = new Set(parsed.processedChannels.map((c: string) => c.toLowerCase()));
+        }
       }
     } catch (e) {
       console.warn('[AutopilotService] Archive load warning:', e);
+    }
+
+    // Populate channels from existing packages to ensure channel diversity
+    for (const pkg of this.state.packages) {
+      if (pkg.sourceVideo?.channel) {
+        this.processedChannels.add(pkg.sourceVideo.channel.trim().toLowerCase());
+      }
     }
 
     // STRICT RE-SYNC: Pull all uploaded IDs from UploadRegistry to permanently prevent duplicate uploads
@@ -140,6 +202,13 @@ export class AutopilotService {
       const uploadedSourceIds = this.uploadRegistryService.getAllSourceVideoIds();
       for (const id of uploadedSourceIds) {
         this.processedVideoIds.add(id);
+      }
+
+      const allRecords = this.uploadRegistryService.getAll();
+      for (const rec of allRecords) {
+        if (rec.sourceVideoChannel) {
+          this.processedChannels.add(rec.sourceVideoChannel.trim().toLowerCase());
+        }
       }
 
       // Re-tag any existing packages if already uploaded manually or in previous runs
@@ -178,7 +247,7 @@ export class AutopilotService {
   }
 
   /**
-   * Save config, queue, and processed IDs to disk
+   * Save config, queue, and processed IDs & channels to disk
    */
   private savePersistence(): void {
     try {
@@ -186,6 +255,7 @@ export class AutopilotService {
       const archiveData = {
         packages: this.state.packages,
         processedIds: Array.from(this.processedVideoIds),
+        processedChannels: Array.from(this.processedChannels),
       };
       fs.writeFileSync(this.archiveFilePath, JSON.stringify(archiveData, null, 2), 'utf-8');
     } catch (e) {
@@ -236,8 +306,11 @@ export class AutopilotService {
   /**
    * Search for Creative Commons videos on YouTube using yt-dlp with multi-tier fallback
    */
+  /**
+   * Search for Creative Commons videos on YouTube using yt-dlp with multi-tier fallback & channel diversity
+   */
   public async searchCreativeCommons(
-    niche: string = this.settings.selectedNiche,
+    niche: string = this.settings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri',
     customKeyword: string = this.settings.customKeyword,
     limit: number = 8
   ): Promise<CCVideoCandidate[]> {
@@ -256,78 +329,74 @@ export class AutopilotService {
 
     const searchTerms = [
       queries[0] || '',
-      customKeyword ? `${customKeyword} viral podcast` : '',
-      `${niche} podcast`,
+      customKeyword ? `${customKeyword} gerçek hayat hikayesi röportaj` : '',
+      'gerçek hayat hikayesi röportaj',
+      'hayat dersleri röportaj podcast',
+      'sokak röportajı gerçek hayat',
+      'derin sohbet röportaj podcast',
       `${niche} röportaj`,
-      'yapay zeka podcast',
-      'teknoloji sohbet podcast',
+      `${niche} podcast`,
+      queries[1] || '',
+      queries[2] || '',
     ].filter(Boolean);
+
+    const aggregatedCandidates: CCVideoCandidate[] = [];
+    const seenCandidateIds = new Set<string>();
+    const seenBatchChannels = new Set<string>();
 
     for (const term of searchTerms) {
       try {
-        // Strategy 1: Official YouTube CC Filter URL (&sp=EgIwAQ%253D%253D)
         const ccSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}&sp=EgIwAQ%253D%253D`;
-        const args1 = [
+        const args = [
           ccSearchUrl,
           '--flat-playlist',
           '--dump-json',
-          '-I', `1:${limit + 8}`,
+          '-I', `1:${limit + 10}`,
           '--no-warnings',
         ];
 
-        const rawOutput1 = await this.youtubeService.executeYtDlp(args1);
-        const results1 = await this.parseAndVerifyCCSearchResults(rawOutput1, limit);
-        if (results1.length > 0) {
-          this.state.candidates = results1;
-          this.emitState();
-          return results1;
+        const rawOutput = await this.youtubeService.executeYtDlp(args);
+        const batchResults = await this.parseAndVerifyCCSearchResults(rawOutput, limit + 5);
+
+        for (const cand of batchResults) {
+          if (!seenCandidateIds.has(cand.id)) {
+            seenCandidateIds.add(cand.id);
+            const chanKey = cand.channel.trim().toLowerCase();
+
+            // Channel Diversity: Enforce 1 candidate per channel per search pool
+            if (!seenBatchChannels.has(chanKey)) {
+              seenBatchChannels.add(chanKey);
+              aggregatedCandidates.push(cand);
+            }
+          }
         }
 
-        // Strategy 2: Niche query with official CC Filter
-        const ccSearchUrl2 = `https://www.youtube.com/results?search_query=${encodeURIComponent(term + ' podcast')}&sp=EgIwAQ%253D%253D`;
-        const args2 = [
-          ccSearchUrl2,
-          '--flat-playlist',
-          '--dump-json',
-          '-I', `1:${limit + 8}`,
-          '--no-warnings',
-        ];
-
-        const rawOutput2 = await this.youtubeService.executeYtDlp(args2);
-        const results2 = await this.parseAndVerifyCCSearchResults(rawOutput2, limit);
-        if (results2.length > 0) {
-          this.state.candidates = results2;
-          this.emitState();
-          return results2;
+        if (aggregatedCandidates.length >= limit) {
+          break;
         }
       } catch (err) {
         console.warn(`[Autopilot:Search] Search attempt for "${term}" warned:`, err);
       }
     }
 
-    // Strategy 3: Guaranteed safe Turkish Creative Commons fallback query
-    try {
-      const fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent('podcast sohbet')}&sp=EgIwAQ%253D%253D`;
-      const fallbackRaw = await this.youtubeService.executeYtDlp([
-        fallbackUrl,
-        '--flat-playlist',
-        '--dump-json',
-        '-I', `1:10`,
-        '--no-warnings',
-      ]);
-      const fallbackResults = await this.parseAndVerifyCCSearchResults(fallbackRaw, limit);
-      this.state.candidates = fallbackResults;
-      this.emitState();
-      return fallbackResults;
-    } catch (finalErr) {
-      console.error('[Autopilot:Search] All CC search attempts failed:', finalErr);
-      return [];
-    }
+    // STRICT DIVERSITY SORT: Fresh channels (never used) come FIRST, then sort by viewCount
+    aggregatedCandidates.sort((a, b) => {
+      const aUsed = this.isChannelRecentlyUsed(a.channel) ? 1 : 0;
+      const bUsed = this.isChannelRecentlyUsed(b.channel) ? 1 : 0;
+      if (aUsed !== bUsed) return aUsed - bUsed; // 0 (unused) before 1 (used)
+      return (b.viewCount || 0) - (a.viewCount || 0);
+    });
+
+    const finalCandidates = aggregatedCandidates.slice(0, limit);
+    this.state.candidates = finalCandidates;
+    this.emitState();
+    return finalCandidates;
   }
 
   private async parseAndVerifyCCSearchResults(rawOutput: string, limit: number): Promise<CCVideoCandidate[]> {
     const candidates: CCVideoCandidate[] = [];
     const lines = rawOutput.split(/\r?\n/).filter(Boolean);
+    const seenChannelsInBatch = new Set<string>();
 
     // Comprehensive blacklist of TV channels, commercial MCNs, and music labels
     const riskyEntities = [
@@ -356,12 +425,29 @@ export class AutopilotService {
           continue;
         }
 
+        // Series Mode duration guard: Video must be at least minSourceDurationSeconds (default 60s)
+        if (this.settings.seriesModeEnabled && duration > 0 && duration < (this.settings.minSourceDurationSeconds || 60)) {
+          continue;
+        }
+
         const channelName = (item.uploader || item.channel || '').toLowerCase();
         const descText = (item.description || '').toLowerCase();
 
         // 🛡️ Pre-filter known risky commercial TV & MCN networks
         if (riskyEntities.some((r) => channelName.includes(r))) {
           this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${item.title}" ticari medya ağı (${channelName}) nedeniyle güvenlik gereği elendi.`);
+          continue;
+        }
+
+        // 🛡️ BRAND SAFETY PRE-FILTER: Strictly reject political polemics, terrorism, ethnic conflict, and +18 content
+        const itemSafety = this.checkBrandSafety(`${item.title} ${channelName} ${descText}`);
+        if (!itemSafety.safe) {
+          this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${item.title}" (${itemSafety.reason}) siyasi/terör/+18 filtresi nedeniyle elendi.`);
+          continue;
+        }
+
+        // Channel Diversity within current batch: Don't take duplicates
+        if (seenChannelsInBatch.has(channelName)) {
           continue;
         }
 
@@ -408,8 +494,23 @@ export class AutopilotService {
             continue;
           }
 
+          // 4. BRAND SAFETY PROBE CHECK: Verify probed title, channel, and description
+          const probeSafety = this.checkBrandSafety(
+            `${probe.title} ${probe.channel || ''} ${probe.description || ''}`
+          );
+          if (!probeSafety.safe) {
+            this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${probe.title}" (${probeSafety.reason}) siyasi/terör/+18 filtresi nedeniyle elendi.`);
+            continue;
+          }
+
           // Format duration mm:ss or hh:mm:ss
           const effectiveDuration = probe.duration || duration;
+
+          // Series Mode duration verification
+          if (this.settings.seriesModeEnabled && effectiveDuration < (this.settings.minSourceDurationSeconds || 60)) {
+            continue;
+          }
+
           const mins = Math.floor(effectiveDuration / 60);
           const secs = Math.floor(effectiveDuration % 60);
           const hours = Math.floor(mins / 60);
@@ -435,6 +536,7 @@ export class AutopilotService {
             discoveredAt: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
           });
 
+          seenChannelsInBatch.add(channelName);
           this.emitLog(`🛡️ [Telif Kalkanı: ONAYLANDI] "${probe.title}" %100 Creative Commons lisansı doğrulandı ve müzik telifsiz olarak güvenceye alındı.`);
 
           if (candidates.length >= limit) {
@@ -448,7 +550,7 @@ export class AutopilotService {
       }
     }
 
-    // STRICT VIRALITY SORT: Always order candidates by view count descending
+    // STRICT VIRALITY SORT: Order candidates by view count descending
     candidates.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
 
     return candidates.slice(0, limit);
@@ -463,15 +565,25 @@ export class AutopilotService {
     dayLabel: string;
     timestamp: number;
   } {
+    return this.calculateNextSlotAfter(Date.now() + 10 * 60 * 1000);
+  }
+
+  /**
+   * Calculates the next available slot after a specific minimum timestamp (used for sequential series scheduling)
+   */
+  public calculateNextSlotAfter(minTimestamp: number): {
+    slotTime: string;
+    scheduledFor: string;
+    dayLabel: string;
+    timestamp: number;
+  } {
     const slots =
       this.settings.postingSlots && this.settings.postingSlots.length > 0
         ? [...this.settings.postingSlots].sort()
         : ['12:30', '18:30', '21:15'];
 
-    const now = new Date();
-    // Search up to 14 days ahead for the next free slot
     for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
-      const targetDate = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      const targetDate = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000);
       const year = targetDate.getFullYear();
       const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
       const day = targetDate.getDate().toString().padStart(2, '0');
@@ -481,13 +593,11 @@ export class AutopilotService {
         const [slotHours, slotMins] = slot.split(':').map((s) => parseInt(s, 10));
         const slotDateTime = new Date(year, targetDate.getMonth(), targetDate.getDate(), slotHours, slotMins, 0);
 
-        // If today, slot must be at least 10 minutes in the future
-        if (dayOffset === 0 && slotDateTime.getTime() <= now.getTime() + 10 * 60 * 1000) {
+        if (slotDateTime.getTime() < minTimestamp) {
           continue;
         }
 
         const scheduledFor = `${dateStr} ${slot}`;
-        // Check if any existing package already occupies this slot
         const isOccupied = this.state.packages.some(
           (p) => p.scheduledFor === scheduledFor && p.status !== 'published'
         );
@@ -507,13 +617,47 @@ export class AutopilotService {
       }
     }
 
-    // Default fallback
+    const fallbackDate = new Date(minTimestamp);
+    const h = fallbackDate.getHours().toString().padStart(2, '0');
+    const m = fallbackDate.getMinutes().toString().padStart(2, '0');
+    const timeStr = `${h}:${m}`;
+    const dateStr = `${fallbackDate.getFullYear()}-${(fallbackDate.getMonth() + 1).toString().padStart(2, '0')}-${fallbackDate.getDate().toString().padStart(2, '0')}`;
     return {
-      slotTime: slots[0],
-      scheduledFor: `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${slots[0]}`,
-      dayLabel: `Bugün ${slots[0]}`,
-      timestamp: now.getTime() + 2 * 60 * 60 * 1000,
+      slotTime: timeStr,
+      scheduledFor: `${dateStr} ${timeStr}`,
+      dayLabel: `${dateStr} ${timeStr}`,
+      timestamp: minTimestamp,
     };
+  }
+
+  /**
+   * Calculates sequential consecutive slots with minimum interval for Multi-Part Series
+   */
+  public calculateSequentialSlots(
+    count: number,
+    minIntervalMinutes: number = 55
+  ): Array<{
+    slotTime: string;
+    scheduledFor: string;
+    dayLabel: string;
+    timestamp: number;
+  }> {
+    const results: Array<{
+      slotTime: string;
+      scheduledFor: string;
+      dayLabel: string;
+      timestamp: number;
+    }> = [];
+
+    let currentMinTimestamp = Date.now() + 10 * 60 * 1000;
+
+    for (let i = 0; i < count; i++) {
+      const slot = this.calculateNextSlotAfter(currentMinTimestamp);
+      results.push(slot);
+      currentMinTimestamp = slot.timestamp + minIntervalMinutes * 60 * 1000;
+    }
+
+    return results;
   }
 
   /**
@@ -647,20 +791,39 @@ export class AutopilotService {
           searchCandidates = await this.searchCreativeCommons('Podcast & Röportaj', '', 8);
         }
 
+        // Priority 1: Fresh channel that has not been recently used
         targetVideo = searchCandidates?.find(
           (c) =>
             !this.processedVideoIds.has(c.id) &&
-            !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
+            !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title }) &&
+            !this.isChannelRecentlyUsed(c.channel)
         ) || null;
 
+        // Priority 2: Any unprocessed video from candidates
         if (!targetVideo) {
-          this.emitLog('[Otopilot:Avcı] Daha önce işlenmemiş taze videolar için genişletilmiş arama yapılıyor...');
-          const deepCandidates = await this.searchCreativeCommons('Teknoloji Bilim Podcast Röportaj', '', 12);
-          targetVideo = deepCandidates?.find(
+          targetVideo = searchCandidates?.find(
             (c) =>
               !this.processedVideoIds.has(c.id) &&
               !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
           ) || null;
+        }
+
+        if (!targetVideo) {
+          this.emitLog('[Otopilot:Avcı] Daha önce işlenmemiş taze videolar için genişletilmiş arama yapılıyor...');
+          const deepCandidates = await this.searchCreativeCommons('Röportaj Gerçek Hayat Hikayeleri', '', 12);
+          targetVideo =
+            deepCandidates?.find(
+              (c) =>
+                !this.processedVideoIds.has(c.id) &&
+                !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title }) &&
+                !this.isChannelRecentlyUsed(c.channel)
+            ) ||
+            deepCandidates?.find(
+              (c) =>
+                !this.processedVideoIds.has(c.id) &&
+                !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
+            ) ||
+            null;
         }
       }
 
@@ -707,26 +870,42 @@ export class AutopilotService {
         targetCount + 15
       );
 
-      let availableCandidates = candidates.filter((c) => !this.processedVideoIds.has(c.id));
-      if (availableCandidates.length < targetCount) {
-        const fallbackCandidates = await this.searchCreativeCommons('Podcast Röportaj Sohbet', '', targetCount + 15);
-        for (const fc of fallbackCandidates) {
-          if (!this.processedVideoIds.has(fc.id) && !availableCandidates.some((ac) => ac.id === fc.id)) {
-            availableCandidates.push(fc);
+      const availableCandidates = candidates.filter(
+        (c) => !this.processedVideoIds.has(c.id) && !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id })
+      );
+
+      // STRICT CHANNEL DIVERSITY: Ensure every video in the daily batch is from a DIFFERENT channel
+      const seenBatchChannels = new Set<string>();
+      const distinctChannelCandidates: CCVideoCandidate[] = [];
+
+      for (const cand of availableCandidates) {
+        const chanKey = (cand.channel || '').trim().toLowerCase();
+        if (!seenBatchChannels.has(chanKey) && !this.isChannelRecentlyUsed(cand.channel)) {
+          seenBatchChannels.add(chanKey);
+          distinctChannelCandidates.push(cand);
+        }
+      }
+
+      // Fallback: Fill remaining slots from other available candidates if needed
+      if (distinctChannelCandidates.length < targetCount) {
+        for (const cand of availableCandidates) {
+          const chanKey = (cand.channel || '').trim().toLowerCase();
+          if (!seenBatchChannels.has(chanKey)) {
+            seenBatchChannels.add(chanKey);
+            distinctChannelCandidates.push(cand);
           }
         }
       }
 
       for (let i = 0; i < targetCount; i++) {
-        let candidate = availableCandidates[i];
-        if (!candidate) {
-          // Additional fallback if still missing candidates
+        let candidate = distinctChannelCandidates[i] || availableCandidates[i];
+        if (!candidate && candidates.length > 0) {
           candidate = candidates[i % candidates.length];
         }
 
         if (!candidate) continue;
 
-        this.emitLog(`\n🎬 PARTİ GÖREVİ [${i + 1}/${targetCount}]: "${candidate.title}"`);
+        this.emitLog(`\n🎬 PARTİ GÖREVİ [${i + 1}/${targetCount}]: "${candidate.title}" (Kanal: ${candidate.channel})`);
         try {
           const pkg = await this.executeClipProduction(candidate, i + 1, targetCount);
           if (pkg) {
@@ -846,6 +1025,198 @@ export class AutopilotService {
         }
       }
     );
+
+    // STEP 4.5: BRAND SAFETY AUDIT ON TRANSCRIPT
+    const transcriptSafety = this.checkBrandSafety(transcript.text || '');
+    if (!transcriptSafety.safe) {
+      throw new Error(
+        `Kanal Güvenlik Kalkanı: Video transkriptinde "${transcriptSafety.reason}" içeriği tespit edildi. Siyasi propaganda, terör veya +18 içerikler kanal güvenliği ve YouTube politikaları gereği derhal engellendi.`
+      );
+    }
+
+    // =========================================================================
+    // BRANCH A: SERIES MODE (Cliffhanger Qwen - Multi-Part Consecutive Shorts)
+    // =========================================================================
+    if (this.settings.seriesModeEnabled) {
+      this.state.activeAgent = 'cliffhanger_architect';
+      this.updateProgress(
+        5,
+        'Seri Kurgu & Cliffhanger',
+        70,
+        'Cliffhanger Qwen video hikayesini analiz ediyor ve Part 1 / Part 2 kırılma noktasını belirliyor...',
+        batchCurrent,
+        batchTotal
+      );
+
+      const partsCount = this.settings.seriesPartsCount || 2;
+      const seriesClips = await this.agencyService.generateCliffhangerSeriesClips(transcript, {
+        partsCount,
+        baseTitle: targetVideo.title,
+        overlayBanner: this.settings.seriesOverlayBanner ?? true,
+        onMessage: this.onAgencyMessage,
+        onLog: this.onLog,
+      });
+
+      const sequentialSlots = this.calculateSequentialSlots(
+        seriesClips.length,
+        this.settings.seriesIntervalMinutes || 55
+      );
+      const seriesPackages: ScheduledClipPackage[] = [];
+      const seriesGroupId = `grp_${Date.now()}`;
+
+      for (let i = 0; i < seriesClips.length; i++) {
+        const sClip = seriesClips[i];
+        const sSlot = sequentialSlots[i];
+
+        this.updateProgress(
+          6,
+          'Seri Render',
+          75 + Math.round((i / seriesClips.length) * 20),
+          `Part ${sClip.partNumber}/${sClip.totalParts} 9:16 formatında ve bannerlı render ediliyor...`,
+          batchCurrent,
+          batchTotal
+        );
+
+        const sanitizedTitle = sClip.title
+          .replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ\s_-]/g, '')
+          .trim()
+          .replace(/\s+/g, '_')
+          .substring(0, 30);
+
+        const packageFolderName = `${sSlot.scheduledFor.replace(/[: ]/g, '_')}_Part${sClip.partNumber}_${sanitizedTitle}`;
+        const packageDir = path.join(this.settings.archiveDirectory, packageFolderName);
+        fs.mkdirSync(packageDir, { recursive: true });
+
+        const finalVideoPath = path.join(packageDir, 'video.mp4');
+        const assPath = path.join(packageDir, 'subtitles.ass');
+
+        // Generate ASS Subtitles with persistent series banner overlay
+        const allWords = transcript.segments?.flatMap((s) => s.words || []) || [];
+        generateAssSubtitles(
+          allWords,
+          sClip.start_seconds,
+          sClip.end_seconds,
+          {
+            fontName: 'Montserrat',
+            fontSize: 72,
+            primaryColor: '#FFFFFF',
+            highlightColor: '#FFE600',
+            outlineColor: '#000000',
+            outlineWidth: 5,
+            shadowDepth: 2,
+            alignment: 2,
+            marginV: 420,
+            wordsPerGroup: 3,
+            animationStyle: 'karaoke',
+            uppercase: true,
+          },
+          assPath,
+          this.settings.aspectRatio,
+          sClip.seriesBannerText
+        );
+
+        let customVideoFilter: string | undefined = undefined;
+        if (this.settings.layoutMode === 'smart_face_tracking') {
+          try {
+            const faceResult = await this.faceTrackingService.analyzeCrop(
+              rawVideoPath,
+              sClip.start_seconds,
+              sClip.duration_seconds
+            );
+            customVideoFilter = faceResult.filter_complex;
+          } catch (faceErr) {
+            console.warn('[Autopilot:FaceTracking] Failed:', faceErr);
+          }
+        }
+
+        this.emitLog(`[FFmpeg] Render başlıyor (Part ${sClip.partNumber}/${sClip.totalParts}) -> ${path.basename(finalVideoPath)}`);
+
+        await this.ffmpegService.renderVerticalClip({
+          videoPath: rawVideoPath,
+          startSeconds: sClip.start_seconds,
+          durationSeconds: sClip.duration_seconds,
+          assSubtitlePath: assPath,
+          outputPath: finalVideoPath,
+          aspectRatio: this.settings.aspectRatio,
+          layoutMode: this.settings.layoutMode,
+          customVideoFilter,
+        });
+
+        // Thumbnail
+        let finalThumbnailPath = path.join(packageDir, 'thumbnail.jpg');
+        const frameSec = sClip.start_seconds + Math.min(4, sClip.duration_seconds / 2);
+        try {
+          await this.ffmpegService.extractFrame(rawVideoPath, frameSec, finalThumbnailPath);
+        } catch {}
+
+        // Rich dialogue & clean metadata: NO links, NO app promos!
+        const sMeta = sClip.socialMetadata || {
+          titles: [sClip.title, `${sClip.title} #Shorts`],
+          description: `⚡ ${sClip.hook_sentence}\n\n👉 Devamı için takipte kalın!`,
+          hashtags: ['#Shorts', '#Viral', '#Hikaye', '#Röportaj'],
+          callToAction: 'Devamı için takip edin! 👇',
+        };
+
+        const pkg: ScheduledClipPackage = {
+          id: `pkg_${Date.now()}_part${sClip.partNumber}_${Math.random().toString(36).substring(2, 6)}`,
+          clipId: sClip.clip_id,
+          title: sClip.title,
+          scheduledFor: sSlot.scheduledFor,
+          slotTime: sSlot.slotTime,
+          dayLabel: sSlot.dayLabel,
+          videoPath: finalVideoPath,
+          thumbnailPath: fs.existsSync(finalThumbnailPath) ? finalThumbnailPath : undefined,
+          packageDir,
+          socialMetadata: sMeta,
+          sourceVideo: {
+            id: targetVideo.id,
+            title: targetVideo.title,
+            channel: targetVideo.channel,
+            url: targetVideo.url,
+            license: targetVideo.license,
+            thumbnailUrl: targetVideo.thumbnailUrl,
+          },
+          viralityScore: sClip.virality_score,
+          qaScore: 96,
+          schedulerNote: `Cliffhanger Seri Modu (Part ${sClip.partNumber}/${sClip.totalParts}) - ${sSlot.dayLabel}`,
+          createdAt: new Date().toISOString(),
+          status: 'ready',
+          isSeries: true,
+          partNumber: sClip.partNumber,
+          totalParts: sClip.totalParts,
+          seriesGroupId,
+          seriesBannerText: sClip.seriesBannerText,
+        };
+
+        fs.writeFileSync(path.join(packageDir, 'package_info.json'), JSON.stringify(pkg, null, 2), 'utf-8');
+        seriesPackages.push(pkg);
+        this.state.packages.unshift(pkg);
+      }
+
+      // Record channel and ID as processed to maintain diversity
+      if (targetVideo.channel) {
+        this.processedChannels.add(targetVideo.channel.trim().toLowerCase());
+      }
+      this.processedVideoIds.add(targetVideo.id);
+      this.state.lastRunAt = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      this.updateProgress(
+        6,
+        'Yayın & Render',
+        100,
+        `Tamamlandı! ${seriesPackages.length} parçalı seri başarıyla hazırlandı ve kuyruğa eklendi.`,
+        batchCurrent,
+        batchTotal
+      );
+      this.savePersistence();
+      this.emitState();
+
+      this.emitLog(`🎉 [Otopilot:Seri Modu] ${seriesPackages.length} parçalık seri başarıyla oluşturuldu ve sıralı saatlere planlandı.`);
+      return seriesPackages[0];
+    }
+
+    // =========================================================================
+    // BRANCH B: STANDARD SINGLE VIRAL CLIP
+    // =========================================================================
 
     // STEP 5: MULTI-AGENT AGENCY PIPELINE (14 Ajanlı Tam Otonom Senkronizasyon)
     this.state.activeAgent = 'ceo';
@@ -979,16 +1350,48 @@ export class AutopilotService {
       }
     }
 
-    // STEP 8: BUILD SOCIAL METADATA & BUNDLE PACKAGE
-    const socialMeta = bestClip.socialMetadata || {
-      titles: [bestClip.title, `🔥 ${bestClip.title}`, `Bunu Biliyor Muydunuz? | ${bestClip.title}`],
-      description: `${bestClip.hook_sentence}\n\nİzlediğiniz için teşekkürler! Devamı için takip etmeyi unutmayın.`,
-      hashtags: ['#kesfet', '#viral', '#podcast', '#shorts', '#reels'],
-      callToAction: 'Düşüncelerinizi yorumlarda paylaşın! 👇',
+    // STEP 8: BUILD SOCIAL METADATA & BUNDLE PACKAGE (100% video-focused, dialogue quotes, NO app promos or links!)
+    const matchingSegs = transcript.segments?.filter(
+      (s) => s.start >= bestClip.start_seconds && s.end <= bestClip.end_seconds
+    ) || [];
+    const dialogueQuote =
+      matchingSegs.map((s) => s.text.trim()).filter(Boolean).join(' ').substring(0, 160) ||
+      bestClip.hook_sentence;
+
+    let cleanDesc =
+      bestClip.socialMetadata?.description ||
+      `🔥 "${dialogueQuote}..."\n\nBu kesitte konuşmacının aktardığı sarsıcı detaylar ve yaşam tecrübesi ele alınıyor. Gerçek hayatın içinden çıkarılacak en kilit dersler.\n\nSizce konuşmacı bu tespitinde haklı mı? Düşüncelerinizi yorumlarda paylaşmayı unutmayın! 👇`;
+    cleanDesc = cleanDesc
+      .replace(/https?:\/\/[^\s]+/gi, '')
+      .replace(/⚡\s*Bu video AutoClip[^\n]*/gi, '')
+      .replace(/🚀\s*Proje & Kaynak Kod:[^\n]*/gi, '')
+      .replace(/#AutoClipAI/gi, '#Keşfet')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const socialMeta = {
+      titles: bestClip.socialMetadata?.titles || [
+        bestClip.title,
+        `🔥 ${bestClip.title}`,
+        `Bunu Biliyor Muydunuz? | ${bestClip.title}`,
+      ],
+      description: cleanDesc,
+      hashtags: (
+        bestClip.socialMetadata?.hashtags || [
+          '#Shorts',
+          '#Röportaj',
+          '#Hikaye',
+          '#Keşfet',
+          '#Viral',
+          '#Podcast',
+        ]
+      ).filter((h: string) => !/autoclip|autocut/i.test(h)),
+      callToAction:
+        bestClip.socialMetadata?.callToAction || 'Düşüncelerinizi yorumlarda paylaşın! 👇',
     };
 
     const socialTextContent = `======================================================================
-🎬 AUTOCLIP AI YAYIN ARŞİVİ - YAYINA HAZIR PAKET
+🎬 YAYINA HAZIR VİRAL KLİP PAKETİ
 📅 Planlanan Yayın Zamanı: ${nextSlot.dayLabel} (Yuva: ${nextSlot.slotTime})
 ⭐ Virallik Skoru: ${bestClip.virality_score}/100
 🎯 Kanca Cümlesi: "${bestClip.hook_sentence}"
@@ -1009,7 +1412,7 @@ ${socialMeta.hashtags.join(' ')}
 📢 ÇAĞRI (CALL TO ACTION):
 ${socialMeta.callToAction}
 
-⚖️ TELİF VE ATIF BİLGİSİ (CREATIVE COMMONS CC-BY):
+⚖️ LİSANS BİLGİSİ (CREATIVE COMMONS CC-BY):
 ${auditResult.attribution}
 Orijinal Video: ${targetVideo.title}
 Kanal: ${targetVideo.channel}
@@ -1053,6 +1456,12 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
 
     const readyPackage: ScheduledClipPackage = packageInfoData;
 
+    // Track channel and ID
+    if (targetVideo.channel) {
+      this.processedChannels.add(targetVideo.channel.trim().toLowerCase());
+    }
+    this.processedVideoIds.add(targetVideo.id);
+
     // Add to state queue
     this.state.packages.unshift(readyPackage);
     this.state.lastRunAt = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -1060,7 +1469,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     this.savePersistence();
     this.emitState();
 
-    this.emitLog(`🎉 [Otopilot] Başarıyla paketlendi ve arşivlendi: "${bestClip.title}" -> ${nextSlot.dayLabel}`);
+    this.emitLog(`🎉 [Otopilot] Başarıyla paketlendi ve arşivlendi: "${bestClip.title}" (${targetVideo.channel}) -> ${nextSlot.dayLabel}`);
 
     return readyPackage;
   }

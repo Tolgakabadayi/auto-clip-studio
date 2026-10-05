@@ -16,7 +16,9 @@ import {
   Eye,
   ShieldCheck,
   Bot,
+  ExternalLink,
 } from 'lucide-react';
+import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import { ViralClip, ScheduledClipPackage } from '../types';
 import { ThumbnailStudioModal } from './ThumbnailStudioModal';
 
@@ -70,6 +72,10 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
     socialMetadata: pkg.socialMetadata,
     status: 'completed',
     createdAt: pkg.createdAt,
+    isUploaded: pkg.isUploaded || pkg.status === 'published',
+    uploadedAt: pkg.uploadedAt,
+    youtubeVideoId: pkg.youtubeVideoId,
+    youtubeUrl: pkg.youtubeUrl,
   }));
 
   // Helper to sort clips newest-first (en yeni her zaman en üstte)
@@ -252,11 +258,33 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
                   <div className="space-y-3">
                     {/* Top Header of Card */}
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 flex-wrap">
                         {getViralityBadge(clip.virality_score)}
                         <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-dark-900 text-slate-300 border border-dark-750">
                           {clip.duration_seconds} saniye
                         </span>
+                        {(clip.isUploaded || clip.youtubeVideoId) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const targetUrl =
+                                clip.youtubeUrl ||
+                                (clip.youtubeVideoId ? `https://youtube.com/shorts/${clip.youtubeVideoId}` : null);
+                              if (targetUrl) {
+                                if (window.electronAPI?.openPath) window.electronAPI.openPath(targetUrl);
+                                else window.open(targetUrl, '_blank');
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 flex items-center space-x-1.5 transition-all shadow-sm group/yt"
+                            title="YouTube Shorts'ta Yayında - İzlemek için tıklayın"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                            <Youtube className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Shorts Yayında</span>
+                            <ExternalLink className="w-3 h-3 text-rose-400 group-hover/yt:translate-x-0.5 transition-transform" />
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2 text-xs font-mono text-slate-400 bg-dark-900/80 px-2.5 py-1 rounded-lg border border-dark-750">
                         <Clock className="w-3.5 h-3.5 text-slate-500" />

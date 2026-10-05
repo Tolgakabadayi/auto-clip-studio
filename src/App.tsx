@@ -215,12 +215,63 @@ export const App: React.FC = () => {
         if (feat === 'new_video') handleAutonomousDockNewVideoRef.current?.();
       });
 
+      // Synchronize initial clips with permanent Upload Registry
+      if (window.electronAPI.uploadRegistryGetAll) {
+        window.electronAPI.uploadRegistryGetAll().then((records: any[]) => {
+          if (records && records.length > 0) {
+            setClips((prev) =>
+              prev.map((c) => {
+                const match = records.find(
+                  (r) =>
+                    (r.clipId !== undefined && r.clipId === c.clip_id) ||
+                    (r.filePath && c.outputPath && r.filePath === c.outputPath) ||
+                    (r.title && c.title && r.title.trim().toLowerCase() === c.title.trim().toLowerCase())
+                );
+                if (match) {
+                  return {
+                    ...c,
+                    isUploaded: true,
+                    uploadedAt: match.uploadedAt,
+                    youtubeVideoId: match.youtubeVideoId,
+                    youtubeUrl: match.youtubeUrl,
+                  };
+                }
+                return c;
+              })
+            );
+          }
+        }).catch(console.error);
+      }
+
+      // Live subscription for any manual or autopilot uploads
+      const unregisterClipUploaded = window.electronAPI.onClipUploaded?.((record: any) => {
+        setClips((prev) =>
+          prev.map((c) => {
+            const match =
+              (record.clipId !== undefined && record.clipId === c.clip_id) ||
+              (record.filePath && c.outputPath && record.filePath === c.outputPath) ||
+              (record.title && c.title && record.title.trim().toLowerCase() === c.title.trim().toLowerCase());
+            if (match) {
+              return {
+                ...c,
+                isUploaded: true,
+                uploadedAt: record.uploadedAt,
+                youtubeVideoId: record.youtubeVideoId,
+                youtubeUrl: record.youtubeUrl,
+              };
+            }
+            return c;
+          })
+        );
+      });
+
       return () => {
         unregisterProgress();
         unregisterLog();
         if (unregisterAgencyMsg) unregisterAgencyMsg();
         if (unregisterAutopilot) unregisterAutopilot();
         if (unregisterDock) unregisterDock();
+        if (unregisterClipUploaded) unregisterClipUploaded();
       };
     }
   }, []);

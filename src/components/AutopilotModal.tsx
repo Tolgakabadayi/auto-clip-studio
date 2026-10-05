@@ -31,7 +31,9 @@ import {
   ScheduledClipPackage,
   CCVideoCandidate,
   ViralClip,
+  YouTubeAuthStatus,
 } from '../types';
+import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 
 interface AutopilotModalProps {
   isOpen: boolean;
@@ -61,6 +63,8 @@ export const AutopilotModal: React.FC<AutopilotModalProps> = ({
   const [newSlotTime, setNewSlotTime] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [isPublishingNow, setIsPublishingNow] = useState<string | null>(null);
+  const [ytStatus, setYtStatus] = useState<YouTubeAuthStatus | null>(null);
 
   const niches = [
     'Yapay Zeka & Teknoloji',
@@ -82,18 +86,41 @@ export const AutopilotModal: React.FC<AutopilotModalProps> = ({
       window.electronAPI.autopilotGetState().then(setState).catch(console.error);
     }
 
+    if (window.electronAPI.youtubeGetAuthStatus) {
+      window.electronAPI.youtubeGetAuthStatus().then(setYtStatus).catch(console.warn);
+    }
+
     const unregister = window.electronAPI.onAutopilotState?.((newState: AutopilotState) => {
       setState(newState);
     });
 
+    const unregisterYt = window.electronAPI.onYouTubeAuthUpdated?.((st: YouTubeAuthStatus) => {
+      setYtStatus(st);
+    });
+
     return () => {
       if (unregister) unregister();
+      if (unregisterYt) unregisterYt();
     };
   }, [isOpen]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handlePublishNow = async (packageId: string) => {
+    if (!window.electronAPI?.autopilotPublishNow) return;
+    setIsPublishingNow(packageId);
+    try {
+      showToast('🚀 Klip YouTube Shorts\'a yükleniyor...');
+      await window.electronAPI.autopilotPublishNow(packageId);
+      showToast('🎉 Harika! Klip YouTube Shorts\'a yüklendi!');
+    } catch (err: any) {
+      alert(`YouTube yükleme hatası: ${err.message}`);
+    } finally {
+      setIsPublishingNow(null);
+    }
   };
 
   if (!isOpen) return null;
@@ -533,11 +560,39 @@ Lisans: Creative Commons Attribution (CC-BY)
                     >
                       <div>
                         {/* Slot Badge & Virality Score */}
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                            {pkg.dayLabel}
-                          </span>
+                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                          <div className="flex items-center space-x-2">
+                            {pkg.status === 'published' || pkg.isUploaded ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const url =
+                                    pkg.youtubeUrl ||
+                                    (pkg.youtubeVideoId ? `https://youtube.com/shorts/${pkg.youtubeVideoId}` : null);
+                                  if (url) {
+                                    if (window.electronAPI?.openPath) window.electronAPI.openPath(url);
+                                    else window.open(url, '_blank');
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 flex items-center gap-1.5 transition-all shadow-sm group/yt"
+                                title="YouTube Shorts Yayında - Açmak için tıklayın"
+                              >
+                                <Youtube className="w-3.5 h-3.5 text-rose-500" />
+                                <span>Shorts Yayında</span>
+                                <ExternalLink className="w-3 h-3 text-rose-300 group-hover/yt:translate-x-0.5 transition-transform" />
+                              </button>
+                            ) : pkg.status === 'publishing' ? (
+                              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                                <span>YouTube'a Yükleniyor...</span>
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>{pkg.dayLabel} ({pkg.slotTime})</span>
+                              </span>
+                            )}
+                          </div>
 
                           <div className="flex items-center space-x-2">
                             <span className="px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
@@ -633,27 +688,45 @@ Lisans: Creative Commons Attribution (CC-BY)
                       </div>
 
                       {/* Card Footer Actions */}
-                      <div className="pt-3 border-t border-dark-750 flex items-center justify-between">
-                        <button
-                          onClick={() => handleCopyPackageMeta(pkg)}
-                          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                            copiedId === pkg.id
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-dark-800 hover:bg-dark-750 text-white border-dark-700'
-                          }`}
-                        >
-                          {copiedId === pkg.id ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Kopyalandı!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Metinleri Kopyala</span>
-                            </>
+                      <div className="pt-3 border-t border-dark-750 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleCopyPackageMeta(pkg)}
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              copiedId === pkg.id
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-dark-800 hover:bg-dark-750 text-white border-dark-700'
+                            }`}
+                          >
+                            {copiedId === pkg.id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Kopyalandı!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Metinleri Kopyala</span>
+                              </>
+                            )}
+                          </button>
+
+                          {pkg.status !== 'published' && !pkg.isUploaded && (
+                            <button
+                              onClick={() => handlePublishNow(pkg.id)}
+                              disabled={isPublishingNow === pkg.id || pkg.status === 'publishing'}
+                              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white border border-rose-500 text-xs font-bold transition-all shadow-sm shadow-rose-950/40 hover:scale-105 active:scale-95"
+                              title="Planlanan altın saati beklemeden hemen YouTube Shorts'a yükle"
+                            >
+                              {isPublishingNow === pkg.id || pkg.status === 'publishing' ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Youtube className="w-3.5 h-3.5" />
+                              )}
+                              <span>Şimdi Yayınla</span>
+                            </button>
                           )}
-                        </button>
+                        </div>
 
                         <div className="flex items-center space-x-2">
                           <button
@@ -887,6 +960,104 @@ Lisans: Creative Commons Attribution (CC-BY)
                       <Plus className="w-3.5 h-3.5" />
                       <span>Ekle</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* YouTube Shorts Otonom Yayınlama & Zamanlama Ayarları */}
+              <div className="bg-dark-900 border border-rose-500/30 p-4 rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-500 flex items-center justify-center">
+                      <Youtube className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>YouTube Shorts Otomatik Yayınlama</span>
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold">
+                          Otonom
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Belirlenen altın saat geldiğinde klip paketlerini doğrudan YouTube Shorts'a yükler.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => updateSettingsField({ autoPublishYouTube: !settings?.autoPublishYouTube })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      settings?.autoPublishYouTube !== false ? 'bg-rose-600' : 'bg-dark-750'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        settings?.autoPublishYouTube !== false ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-dark-750/70">
+                  {/* Hazırlık Süresi (Kaç dk önce başlasın) */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      <span>Otonom Hazırlık Başlama Zamanı</span>
+                    </label>
+                    <select
+                      value={settings?.prepareMinutesBeforeSlot || 15}
+                      onChange={(e) => updateSettingsField({ prepareMinutesBeforeSlot: Number(e.target.value) })}
+                      className="w-full bg-dark-850 border border-dark-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                    >
+                      <option value="10">Yayın saatinden 10 dakika önce (Hızlı)</option>
+                      <option value="15">Yayın saatinden 15 dakika önce (Önerilen)</option>
+                      <option value="20">Yayın saatinden 20 dakika önce</option>
+                      <option value="30">Yayın saatinden 30 dakika önce (Geniş Pay)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">
+                      Ajanlar videoyu bu süre öncesinde bulup kurgular, vakit gelince yayına sürer.
+                    </span>
+                  </div>
+
+                  {/* Yayın Gizliliği */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3 h-3 text-brand-purple" />
+                      <span>Shorts Gizlilik Durumu</span>
+                    </label>
+                    <select
+                      value={settings?.youtubePrivacy || 'public'}
+                      onChange={(e) => updateSettingsField({ youtubePrivacy: e.target.value as any })}
+                      className="w-full bg-dark-850 border border-dark-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+                    >
+                      <option value="public">Herkese Açık (Doğrudan Canlı)</option>
+                      <option value="unlisted">Liste Dışı (Gizli Önizleme)</option>
+                      <option value="private">Gizli (Yalnızca Kanal Sahibi)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 block">
+                      Otopilotun yüklediği videoların varsayılan görünürlük ayarı.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Kanal Durumu */}
+                <div className="p-2.5 rounded-xl bg-dark-850 border border-dark-750 flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-400">Bağlı YouTube Kanalı:</span>
+                    {ytStatus?.isAuthenticated && ytStatus.channel ? (
+                      <span className="font-bold text-white flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        {ytStatus.channel.title}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-amber-400 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        Kanal Bağlı Değil (Ayarlar &gt; YouTube'dan bağlayın)
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

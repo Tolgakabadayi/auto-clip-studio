@@ -16,6 +16,7 @@ import { AgencyService } from './services/agencyService';
 import { AutopilotService } from './services/autopilotService';
 import { CopilotService } from './services/copilotService';
 import { GoogleAuthService, YouTubeUploadPayload } from './services/googleAuthService';
+import { UploadRegistryService } from './services/uploadRegistryService';
 import {
   PipelineOptions,
   ViralClip,
@@ -177,12 +178,16 @@ const llmService = new LLMService();
 const youtubeService = new YouTubeService();
 const faceTrackingService = new FaceTrackingService();
 const agencyService = new AgencyService(ffmpegService);
+const googleAuthService = new GoogleAuthService();
+const uploadRegistryService = new UploadRegistryService();
 const autopilotService = new AutopilotService(
   youtubeService,
   whisperService,
   agencyService,
   ffmpegService,
-  faceTrackingService
+  faceTrackingService,
+  googleAuthService,
+  uploadRegistryService
 );
 
 autopilotService.onStateChange = (state) => {
@@ -197,6 +202,9 @@ autopilotService.onProgress = (prog) => {
 autopilotService.onLog = (log) => {
   broadcastToWindows('pipeline:log', log);
 };
+autopilotService.onClipUploaded = (record) => {
+  broadcastToWindows('clip:uploaded', record);
+};
 
 const copilotService = new CopilotService(
   autopilotService,
@@ -204,8 +212,6 @@ const copilotService = new CopilotService(
   agencyService,
   llmService
 );
-
-const googleAuthService = new GoogleAuthService();
 
 copilotService.onSpeech = (speech) => {
   broadcastToWindows('copilot:speech', speech);
@@ -1086,6 +1092,18 @@ ipcMain.handle('autopilot:open-archive-folder', () => {
   return { success: true };
 });
 
+ipcMain.handle('autopilot:publish-now', async (_event, packageId: string) => {
+  return await autopilotService.publishPackageNow(packageId);
+});
+
+ipcMain.handle('upload-registry:get-all', () => {
+  return uploadRegistryService.getAll();
+});
+
+ipcMain.handle('upload-registry:is-uploaded', (_event, query: any) => {
+  return uploadRegistryService.isUploaded(query);
+});
+
 // 🤖 Interactive Copilot AI (NOVA)
 ipcMain.handle('copilot:send-command', async (_event, command: string) => {
   return await copilotService.handleUserCommand(command);
@@ -1254,6 +1272,20 @@ ipcMain.handle('youtube-auth:upload-video', async (_event, payload: YouTubeUploa
         title: payload.title,
       });
     });
+
+    if (result.success && result.videoId) {
+      const uploadedRecord = uploadRegistryService.recordUpload({
+        title: result.title || payload.title,
+        youtubeVideoId: result.videoId,
+        youtubeUrl: result.videoUrl || `https://youtube.com/shorts/${result.videoId}`,
+        uploadMode: 'manual',
+        filePath: payload.filePath,
+        thumbnailPath: payload.thumbnailPath,
+      });
+
+      autopilotService.registerExternalUpload(uploadedRecord);
+      broadcastToWindows('clip:uploaded', uploadedRecord);
+    }
 
     broadcastToWindows('copilot:speech', {
       message: `🔥 Harika haber patron! Klip YouTube Shorts'a yüklendi!`,

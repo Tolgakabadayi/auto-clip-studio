@@ -49,6 +49,11 @@ export interface ViralClip {
   directorNotes?: string;
   qaScore?: number;
   createdAt?: string;
+  isUploaded?: boolean;
+  uploadedAt?: string;
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
+  sourceVideoId?: string;
 }
 
 export interface SubtitleStyleConfig {
@@ -213,6 +218,9 @@ export interface AutopilotSettings {
   creativeCommonsOnly: boolean;
   aspectRatio: '9:16' | '16:9';
   layoutMode: 'blur_background' | 'crop_center' | 'smart_face_tracking';
+  autoPublishYouTube?: boolean; // Automatically upload to YouTube Shorts when slot arrives
+  youtubePrivacy?: 'public' | 'unlisted' | 'private';
+  prepareMinutesBeforeSlot?: number; // Minimum 10 mins before slot, default 15
 }
 
 export interface CCVideoCandidate {
@@ -252,7 +260,12 @@ export interface ScheduledClipPackage {
   qaScore?: number;
   schedulerNote?: string;
   createdAt: string;
-  status: 'ready' | 'scheduled' | 'published';
+  status: 'ready' | 'scheduled' | 'publishing' | 'published' | 'failed';
+  isUploaded?: boolean;
+  uploadedAt?: string;
+  youtubeVideoId?: string;
+  youtubeUrl?: string;
+  uploadError?: string;
 }
 
 export interface AutopilotProgressInfo {
@@ -272,12 +285,36 @@ export interface AutopilotState {
   activeProgress?: AutopilotProgressInfo;
   lastRunAt?: string;
   nextRunAt?: string;
+  nextSlotInfo?: {
+    slotTime: string;
+    scheduledFor: string;
+    dayLabel: string;
+    minutesRemaining: number;
+    hasPackage: boolean;
+  };
   packages: ScheduledClipPackage[];
   candidates: CCVideoCandidate[];
   stats: {
     totalGenerated: number;
     pendingPosts: number;
   };
+}
+
+export interface UploadRecord {
+  id: string;
+  title: string;
+  youtubeVideoId: string;
+  youtubeUrl: string;
+  uploadedAt: string;
+  uploadMode: 'manual' | 'autopilot';
+  clipId?: number;
+  packageId?: string;
+  filePath?: string;
+  thumbnailPath?: string;
+  sourceVideoId?: string;
+  sourceVideoTitle?: string;
+  sourceVideoChannel?: string;
+  sourceVideoUrl?: string;
 }
 
 export interface CopilotMessage {

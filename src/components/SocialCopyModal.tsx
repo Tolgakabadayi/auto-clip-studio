@@ -59,6 +59,31 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
   const [privacyStatus, setPrivacyStatus] = useState<'public' | 'unlisted' | 'private'>('unlisted');
   const [customTitle, setCustomTitle] = useState('');
   const [customDescription, setCustomDescription] = useState('');
+  const [isAlreadyUploaded, setIsAlreadyUploaded] = useState<boolean>(!!clip?.isUploaded);
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(
+    clip?.youtubeUrl || (clip?.youtubeVideoId ? `https://youtube.com/shorts/${clip.youtubeVideoId}` : null)
+  );
+
+  // Check upload registry on mount
+  useEffect(() => {
+    if (clip?.isUploaded) {
+      setIsAlreadyUploaded(true);
+      if (clip.youtubeUrl) setUploadedUrl(clip.youtubeUrl);
+      return;
+    }
+    if (window.electronAPI?.uploadRegistryIsUploaded && clip) {
+      window.electronAPI
+        .uploadRegistryIsUploaded({
+          filePath: clip.outputPath,
+          clipId: clip.clip_id,
+          title: clip.title,
+        })
+        .then((uploaded: boolean) => {
+          if (uploaded) setIsAlreadyUploaded(true);
+        })
+        .catch(console.warn);
+    }
+  }, [clip]);
 
   const fetchCopy = async (forceRefresh = false) => {
     if (!clip || !window.electronAPI) return;
@@ -159,6 +184,14 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
 
   const handleUploadToYouTube = async () => {
     if (!clip || !clip.outputPath || !window.electronAPI) return;
+
+    if (isAlreadyUploaded) {
+      const confirmUpload = window.confirm(
+        `⚠️ DİKKAT: Bu klip daha önce sisteme yüklendi olarak kayıtlıdır!\n\nTekrar yüklemek YouTube kanalınızda mükerrer içerik oluşmasına yol açabilir.\n\nYine de tekrar yüklemek istiyor musunuz?`
+      );
+      if (!confirmUpload) return;
+    }
+
     setIsUploading(true);
     setUploadError(null);
     setUploadResult(null);
@@ -180,6 +213,12 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
       });
 
       setUploadResult(res);
+      setIsAlreadyUploaded(true);
+      if (res.videoUrl) setUploadedUrl(res.videoUrl);
+
+      if (onUpdateClipSocialMetadata) {
+        onUpdateClipSocialMetadata(clip.clip_id, metadata, payloadTitle);
+      }
     } catch (err: any) {
       console.error('YouTube upload error:', err);
       setUploadError(err.message || 'YouTube yüklemesi sırasında beklenmeyen bir hata oluştu.');
@@ -485,6 +524,48 @@ export const SocialCopyModal: React.FC<SocialCopyModalProps> = ({
           ) : (
             /* TAB 2: YOUTUBE SHORTS PUBLISHING INTERFACE */
             <div className="space-y-4">
+              {/* Already Uploaded Notification Banner */}
+              {isAlreadyUploaded && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-emerald-300">Bu klip YouTube'a yüklendi</span>
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-[10px] text-emerald-300 font-mono">
+                          Yayında
+                        </span>
+                      </div>
+                      {clip.uploadedAt && (
+                        <p className="text-[11px] text-slate-400 truncate">
+                          Yayınlanma: {new Date(clip.uploadedAt).toLocaleString('tr-TR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {(uploadedUrl || clip.youtubeUrl || clip.youtubeVideoId) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetUrl = uploadedUrl || clip.youtubeUrl || `https://youtube.com/shorts/${clip.youtubeVideoId}`;
+                        if (window.electronAPI?.openPath) {
+                          window.electronAPI.openPath(targetUrl);
+                        } else {
+                          window.open(targetUrl, '_blank');
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 shrink-0 transition-all shadow-sm"
+                    >
+                      <span>Shorts'u Aç</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Channel Authorization Status Card */}
               {ytStatus?.isAuthenticated && ytStatus.channel ? (
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/30 to-dark-850 border border-rose-500/30 flex items-center justify-between">

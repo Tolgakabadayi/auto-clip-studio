@@ -10,6 +10,7 @@ import {
   ViralClip,
   AgencyMessage,
   AgencyProgressEvent,
+  UploadRecord,
 } from '../../src/types';
 import { YouTubeService } from './youtubeService';
 import { WhisperService } from './whisperService';
@@ -17,6 +18,8 @@ import { AgencyService } from './agencyService';
 import { FFmpegService } from './ffmpegService';
 import { FaceTrackingService } from './faceTrackingService';
 import { generateAssSubtitles } from './assGenerator';
+import { GoogleAuthService } from './googleAuthService';
+import { UploadRegistryService } from './uploadRegistryService';
 
 export class AutopilotService {
   private youtubeService: YouTubeService;
@@ -24,6 +27,8 @@ export class AutopilotService {
   private agencyService: AgencyService;
   private ffmpegService: FFmpegService;
   private faceTrackingService: FaceTrackingService;
+  private googleAuthService?: GoogleAuthService;
+  private uploadRegistryService?: UploadRegistryService;
 
   private settings: AutopilotSettings;
   private state: AutopilotState;
@@ -39,19 +44,24 @@ export class AutopilotService {
   public onAgencyMessage?: (msg: AgencyMessage) => void;
   public onProgress?: (progress: AgencyProgressEvent) => void;
   public onLog?: (log: string) => void;
+  public onClipUploaded?: (record: UploadRecord) => void;
 
   constructor(
     youtubeService: YouTubeService,
     whisperService: WhisperService,
     agencyService: AgencyService,
     ffmpegService: FFmpegService,
-    faceTrackingService: FaceTrackingService
+    faceTrackingService: FaceTrackingService,
+    googleAuthService?: GoogleAuthService,
+    uploadRegistryService?: UploadRegistryService
   ) {
     this.youtubeService = youtubeService;
     this.whisperService = whisperService;
     this.agencyService = agencyService;
     this.ffmpegService = ffmpegService;
     this.faceTrackingService = faceTrackingService;
+    this.googleAuthService = googleAuthService;
+    this.uploadRegistryService = uploadRegistryService;
 
     // Determine storage paths
     this.storageDir = path.join(os.homedir(), 'Downloads', 'AutoClips_Downloads');
@@ -75,6 +85,9 @@ export class AutopilotService {
       creativeCommonsOnly: true,
       aspectRatio: '9:16',
       layoutMode: 'blur_background',
+      autoPublishYouTube: true,
+      youtubePrivacy: 'public',
+      prepareMinutesBeforeSlot: 15,
     };
 
     // Initial state
@@ -117,11 +130,36 @@ export class AutopilotService {
         if (Array.isArray(parsed.processedIds)) {
           this.processedVideoIds = new Set(parsed.processedIds);
         }
-        this.updateStats();
       }
     } catch (e) {
       console.warn('[AutopilotService] Archive load warning:', e);
     }
+
+    // STRICT RE-SYNC: Pull all uploaded IDs from UploadRegistry to permanently prevent duplicate uploads
+    if (this.uploadRegistryService) {
+      const uploadedSourceIds = this.uploadRegistryService.getAllSourceVideoIds();
+      for (const id of uploadedSourceIds) {
+        this.processedVideoIds.add(id);
+      }
+
+      // Re-tag any existing packages if already uploaded manually or in previous runs
+      for (const pkg of this.state.packages) {
+        const record = this.uploadRegistryService.getRecord({
+          packageId: pkg.id,
+          filePath: pkg.videoPath,
+          sourceVideoId: pkg.sourceVideo?.id,
+          title: pkg.title,
+        });
+        if (record) {
+          pkg.status = 'published';
+          pkg.isUploaded = true;
+          pkg.youtubeVideoId = record.youtubeVideoId;
+          pkg.youtubeUrl = record.youtubeUrl;
+          pkg.uploadedAt = record.uploadedAt;
+        }
+      }
+    }
+    this.updateStats();
   }
 
   /**
@@ -296,6 +334,14 @@ export class AutopilotService {
         const item = JSON.parse(line.trim());
         if (!item.id || !item.title) continue;
 
+        // STRICT DEDUPLICATION: Exclude any video previously processed or uploaded (manually or auto)
+        if (
+          this.processedVideoIds.has(item.id) ||
+          this.uploadRegistryService?.isUploaded({ sourceVideoId: item.id })
+        ) {
+          continue;
+        }
+
         const duration = Number(item.duration) || 0;
         // Only skip extremely short clips (< 25s) or monstrously long live archives (> 3 hours)
         if (duration > 0 && (duration < 25 || duration > 10800)) {
@@ -412,6 +458,79 @@ export class AutopilotService {
   }
 
   /**
+   * Chronological next slot query for live tracking and auto-preparation
+   */
+  public getNextUpcomingSlot(): {
+    slotTime: string;
+    scheduledFor: string;
+    dayLabel: string;
+    timestamp: number;
+    minutesRemaining: number;
+    hasReadyPackage: boolean;
+    package?: ScheduledClipPackage;
+  } {
+    const slots =
+      this.settings.postingSlots && this.settings.postingSlots.length > 0
+        ? [...this.settings.postingSlots].sort()
+        : ['12:30', '18:30', '21:15'];
+
+    const now = new Date();
+    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+      const targetDate = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      const year = targetDate.getFullYear();
+      const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+      const day = targetDate.getDate().toString().padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      for (const slot of slots) {
+        const [slotHours, slotMins] = slot.split(':').map((s) => parseInt(s, 10));
+        const slotDateTime = new Date(year, targetDate.getMonth(), targetDate.getDate(), slotHours, slotMins, 0);
+
+        // If today and slot has already passed by more than 1 minute, skip
+        if (dayOffset === 0 && slotDateTime.getTime() <= now.getTime() - 60 * 1000) {
+          continue;
+        }
+
+        const scheduledFor = `${dateStr} ${slot}`;
+        const existingPkg = this.state.packages.find(
+          (p) => p.scheduledFor === scheduledFor && p.status !== 'failed'
+        );
+
+        let dayLabel = `${day}.${month}.${year} ${slot}`;
+        if (dayOffset === 0) dayLabel = `Bugün ${slot}`;
+        else if (dayOffset === 1) dayLabel = `Yarın ${slot}`;
+
+        const minutesRemaining = Math.max(0, Math.round((slotDateTime.getTime() - now.getTime()) / (60 * 1000)));
+
+        return {
+          slotTime: slot,
+          scheduledFor,
+          dayLabel,
+          timestamp: slotDateTime.getTime(),
+          minutesRemaining,
+          hasReadyPackage: !!(
+            existingPkg &&
+            (existingPkg.status === 'ready' ||
+              existingPkg.status === 'scheduled' ||
+              existingPkg.status === 'published' ||
+              existingPkg.status === 'publishing')
+          ),
+          package: existingPkg,
+        };
+      }
+    }
+
+    return {
+      slotTime: slots[0],
+      scheduledFor: `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${slots[0]}`,
+      dayLabel: `Bugün ${slots[0]}`,
+      timestamp: now.getTime() + 60 * 60 * 1000,
+      minutesRemaining: 60,
+      hasReadyPackage: false,
+    };
+  }
+
+  /**
    * Helper to broadcast progress updates to UI and state
    */
   private updateProgress(
@@ -469,7 +588,21 @@ export class AutopilotService {
           searchCandidates = await this.searchCreativeCommons('Podcast & Röportaj', '', 8);
         }
 
-        targetVideo = searchCandidates?.find((c) => !this.processedVideoIds.has(c.id)) || searchCandidates?.[0] || null;
+        targetVideo = searchCandidates?.find(
+          (c) =>
+            !this.processedVideoIds.has(c.id) &&
+            !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
+        ) || null;
+
+        if (!targetVideo) {
+          this.emitLog('[Otopilot:Avcı] Daha önce işlenmemiş taze videolar için genişletilmiş arama yapılıyor...');
+          const deepCandidates = await this.searchCreativeCommons('Teknoloji Bilim Podcast Röportaj', '', 12);
+          targetVideo = deepCandidates?.find(
+            (c) =>
+              !this.processedVideoIds.has(c.id) &&
+              !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
+          ) || null;
+        }
       }
 
       if (!targetVideo) {
@@ -866,7 +999,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
   }
 
   /**
-   * Start 24/7 autonomous background timer
+   * Start 24/7 autonomous background timer & YouTube Shorts publishing loop
    */
   public startScheduler(): void {
     if (this.schedulerTimer) clearInterval(this.schedulerTimer);
@@ -875,17 +1008,17 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     this.state.isRunning = true;
     this.savePersistence();
 
-    const intervalMs = Math.max(10, this.settings.checkIntervalMinutes || 30) * 60 * 1000;
-    this.emitLog(`🤖 [Otopilot] 7/24 Otonom Ajans başlatıldı. (Kontrol periyodu: ${this.settings.checkIntervalMinutes} dk)`);
+    this.emitLog(`🤖 [Otopilot] 7/24 Otonom YouTube Yayıncısı başlatıldı! Yayın saatlerinden önce videolar hazırlanacak ve vaktinde YouTube Shorts'a yüklenecek.`);
 
-    // Run first check soon if queue needs videos
+    // Run first check soon (1.5 seconds)
     setTimeout(() => {
-      this.checkAndRunIfQueueLow();
-    }, 3000);
+      this.checkScheduleTick();
+    }, 1500);
 
+    // Active ticking interval: every 20 seconds (low overhead, responsive to publishing slots)
     this.schedulerTimer = setInterval(() => {
-      this.checkAndRunIfQueueLow();
-    }, intervalMs);
+      this.checkScheduleTick();
+    }, 20_000);
 
     this.emitState();
   }
@@ -902,28 +1035,272 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     this.state.isRunning = false;
     this.state.currentAction = 'Durduruldu';
     this.savePersistence();
-    this.emitLog('🛑 [Otopilot] 7/24 Otonom Ajans durduruldu.');
+    this.emitLog('🛑 [Otopilot] 7/24 Otonom Yayıncı durduruldu.');
     this.emitState();
   }
 
-  private async checkAndRunIfQueueLow(): Promise<void> {
-    if (!this.settings.enabled || this.isBusy) return;
+  /**
+   * Main scheduler tick: handles both auto-production (min 10 mins before slot) and auto-publishing (on time)
+   */
+  public async checkScheduleTick(): Promise<void> {
+    if (!this.settings.enabled) return;
 
-    const slotsCount = this.settings.postingSlots?.length || 3;
-    const pendingCount = this.state.packages.filter(
-      (p) => p.status === 'scheduled' || p.status === 'ready'
-    ).length;
+    // 1. Refresh next upcoming slot info for state & UI
+    const upcoming = this.getNextUpcomingSlot();
+    this.state.nextSlotInfo = {
+      slotTime: upcoming.slotTime,
+      scheduledFor: upcoming.scheduledFor,
+      dayLabel: upcoming.dayLabel,
+      minutesRemaining: upcoming.minutesRemaining,
+      hasPackage: upcoming.hasReadyPackage,
+    };
+    this.state.nextRunAt = `${upcoming.dayLabel} (Kalan: ${upcoming.minutesRemaining} dk)`;
 
-    const targetMinQueue = slotsCount * 2; // Keep at least 2 days stocked
-    if (pendingCount < targetMinQueue) {
-      const needed = Math.min(slotsCount, targetMinQueue - pendingCount);
-      this.emitLog(`[Otopilot] Yayın kuyruğunda ${pendingCount} klip var (Hedef: ${targetMinQueue}). ${needed} adet farklı video için parti üretimi başlatılıyor...`);
+    // 2. Publish any packages whose scheduled slot time has arrived
+    await this.publishDuePackages();
+
+    // 3. Check if upcoming slot needs a clip produced (at least 10-15 mins in advance)
+    if (!this.isBusy) {
+      await this.prepareUpcomingSlotIfNeeded(upcoming);
+    }
+  }
+
+  /**
+   * Publishes any packages whose scheduled time has arrived or passed
+   */
+  private async publishDuePackages(): Promise<void> {
+    if (this.isBusy) return;
+
+    const now = Date.now();
+    // Find packages ready to publish: status is 'ready' or 'scheduled'
+    const duePackages = this.state.packages.filter((pkg) => {
+      if (pkg.status !== 'ready' && pkg.status !== 'scheduled') return false;
+      if (!pkg.scheduledFor) return false;
+
       try {
-        await this.runAutopilotDailyBatch(needed);
+        const [datePart, timePart] = pkg.scheduledFor.split(' ');
+        if (!datePart || !timePart) return false;
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, min] = timePart.split(':').map(Number);
+        const scheduledTime = new Date(year, month - 1, day, hour, min, 0).getTime();
+
+        // If scheduled time has arrived (or is within 1 minute past)
+        return now >= scheduledTime;
+      } catch {
+        return false;
+      }
+    });
+
+    for (const pkg of duePackages) {
+      // 1. STRICT DEDUPLICATION CHECK: Check if this video was already uploaded
+      const alreadyUploaded = this.uploadRegistryService?.isUploaded({
+        packageId: pkg.id,
+        filePath: pkg.videoPath,
+        clipId: pkg.clipId,
+        sourceVideoId: pkg.sourceVideo?.id,
+        title: pkg.title,
+      });
+
+      if (alreadyUploaded) {
+        this.emitLog(`[Otopilot] ℹ️ "${pkg.title}" zaten YouTube'a yüklenmiş. Mükerrer yayınlama engellendi.`);
+        pkg.status = 'published';
+        pkg.isUploaded = true;
+        this.savePersistence();
+        this.emitState();
+        continue;
+      }
+
+      // 2. Check if YouTube auto-publish is enabled
+      if (this.settings.autoPublishYouTube === false) {
+        this.emitLog(`[Otopilot] Yayın saati geldi (${pkg.slotTime}), fakat YouTube otomatik yayınlama ayarı pasif.`);
+        continue;
+      }
+
+      // 3. Check YouTube channel connection
+      const isAuth = this.googleAuthService ? (await this.googleAuthService.getStatus()).isAuthenticated : false;
+      if (!isAuth) {
+        this.emitLog(`[Otopilot] ⚠️ Yayın saati geldi (${pkg.slotTime} - "${pkg.title}"), fakat YouTube hesabı bağlı değil! Lütfen Ayarlar > YouTube sekmesinden hesabınızı bağlayın.`);
+        continue;
+      }
+
+      // 4. Execute upload
+      try {
+        await this.publishPackageToYouTube(pkg);
       } catch (err: any) {
-        console.error('[Autopilot] Background batch failed:', err);
+        this.emitLog(`❌ [Otopilot:Yayın Hatası] "${pkg.title}" YouTube'a yüklenemedi: ${err.message}`);
       }
     }
+  }
+
+  /**
+   * Prepares a clip for the upcoming slot if none exists, starting at least 10 minutes in advance
+   */
+  private async prepareUpcomingSlotIfNeeded(upcoming: ReturnType<typeof this.getNextUpcomingSlot>): Promise<void> {
+    if (this.isBusy) return;
+
+    // If upcoming slot already has a package ready, scheduled, or published, nothing to do
+    if (upcoming.hasReadyPackage) {
+      return;
+    }
+
+    // Default preparation buffer: minimum 10 minutes, default 15 minutes before slot
+    const bufferMinutes = Math.max(10, this.settings.prepareMinutesBeforeSlot || 15);
+
+    // If time remaining is within buffer window (e.g. <= 15 mins), start production immediately
+    if (upcoming.minutesRemaining <= bufferMinutes) {
+      this.emitLog(
+        `⏰ [Otopilot:Zamanlayıcı] Sıradaki altın yayın saatine (${upcoming.slotTime} - ${upcoming.dayLabel}) ${upcoming.minutesRemaining} dakika kaldı! Otonom CC video keşfi ve ajans üretimi başlatılıyor...`
+      );
+
+      try {
+        await this.runAutopilotCycle();
+      } catch (err: any) {
+        this.emitLog(`❌ [Otopilot] Otomatik klip üretimi hatası: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Uploads a scheduled package directly to YouTube Shorts with thumbnail and tags
+   */
+  public async publishPackageToYouTube(pkg: ScheduledClipPackage): Promise<void> {
+    if (!this.googleAuthService) {
+      throw new Error('GoogleAuthService mevcut değil.');
+    }
+
+    if (!fs.existsSync(pkg.videoPath)) {
+      throw new Error(`Video dosyası bulunamadı: ${pkg.videoPath}`);
+    }
+
+    // Prevent duplicate upload if already uploaded
+    if (
+      this.uploadRegistryService?.isUploaded({
+        packageId: pkg.id,
+        filePath: pkg.videoPath,
+        clipId: pkg.clipId,
+        sourceVideoId: pkg.sourceVideo?.id,
+      })
+    ) {
+      this.emitLog(`[Otopilot] "${pkg.title}" daha önce yüklenmiş olduğu için mükerrer yükleme durduruldu.`);
+      pkg.status = 'published';
+      pkg.isUploaded = true;
+      this.savePersistence();
+      this.emitState();
+      return;
+    }
+
+    pkg.status = 'publishing';
+    this.state.currentAction = `YouTube Shorts'a yükleniyor: "${pkg.title.slice(0, 25)}..."`;
+    this.savePersistence();
+    this.emitState();
+
+    this.emitLog(`🚀 [Otopilot:Yayın] Altın yayın saati geldi (${pkg.slotTime})! YouTube Shorts'a yükleniyor: "${pkg.title}"`);
+
+    try {
+      const uploadPayload = {
+        filePath: pkg.videoPath,
+        title: pkg.socialMetadata?.titles?.[0] || pkg.title,
+        description: pkg.socialMetadata?.description || pkg.title,
+        tags: pkg.socialMetadata?.hashtags || ['#Shorts', '#viral', '#ai'],
+        privacyStatus: this.settings.youtubePrivacy || 'public',
+        isShort: true,
+        thumbnailPath: pkg.thumbnailPath && fs.existsSync(pkg.thumbnailPath) ? pkg.thumbnailPath : undefined,
+      };
+
+      const result = await this.googleAuthService.uploadVideo(uploadPayload, (percent) => {
+        this.state.currentAction = `YouTube Yükleniyor: %${percent} - "${pkg.title.slice(0, 20)}..."`;
+        this.emitState();
+      });
+
+      if (!result.success || !result.videoId) {
+        throw new Error(result.error || 'YouTube yükleme yanıtı başarısız.');
+      }
+
+      pkg.status = 'published';
+      pkg.isUploaded = true;
+      pkg.youtubeVideoId = result.videoId;
+      pkg.youtubeUrl = result.videoUrl;
+      pkg.uploadedAt = new Date().toISOString();
+      delete pkg.uploadError;
+
+      // Register in upload tracker for permanent deduplication
+      const uploadedRecord: UploadRecord = {
+        id: `up_${Date.now()}`,
+        title: pkg.title,
+        youtubeVideoId: result.videoId,
+        youtubeUrl: result.videoUrl || `https://youtube.com/shorts/${result.videoId}`,
+        uploadedAt: pkg.uploadedAt,
+        uploadMode: 'autopilot',
+        clipId: pkg.clipId,
+        packageId: pkg.id,
+        filePath: pkg.videoPath,
+        thumbnailPath: pkg.thumbnailPath,
+        sourceVideoId: pkg.sourceVideo?.id,
+        sourceVideoTitle: pkg.sourceVideo?.title,
+        sourceVideoChannel: pkg.sourceVideo?.channel,
+        sourceVideoUrl: pkg.sourceVideo?.url,
+      };
+
+      this.uploadRegistryService?.recordUpload(uploadedRecord);
+      if (pkg.sourceVideo?.id) {
+        this.processedVideoIds.add(pkg.sourceVideo.id);
+      }
+
+      this.savePersistence();
+      this.emitState();
+      this.emitLog(`🎉 [Otopilot:Yayın Başarılı] "${pkg.title}" YouTube Shorts'a yüklendi! 🔗 ${result.videoUrl}`);
+
+      if (this.onClipUploaded) {
+        this.onClipUploaded(uploadedRecord);
+      }
+    } catch (err: any) {
+      pkg.status = 'failed';
+      pkg.uploadError = err.message;
+      this.savePersistence();
+      this.emitState();
+      throw err;
+    }
+  }
+
+  /**
+   * Manually trigger immediate upload of a ready package
+   */
+  public async publishPackageNow(packageId: string): Promise<boolean> {
+    const pkg = this.state.packages.find((p) => p.id === packageId);
+    if (!pkg) {
+      throw new Error(`Paket bulunamadı: ${packageId}`);
+    }
+    await this.publishPackageToYouTube(pkg);
+    return true;
+  }
+
+  /**
+   * External upload notification (called when user uploads manually via Social Modal)
+   */
+  public registerExternalUpload(record: UploadRecord): void {
+    if (record.sourceVideoId) {
+      this.processedVideoIds.add(record.sourceVideoId);
+    }
+
+    // Match and update any corresponding package
+    for (const pkg of this.state.packages) {
+      const match =
+        (record.packageId && pkg.id === record.packageId) ||
+        (record.filePath && path.resolve(pkg.videoPath) === path.resolve(record.filePath)) ||
+        (record.clipId !== undefined && pkg.clipId === record.clipId) ||
+        (record.title && pkg.title.trim().toLowerCase() === record.title.trim().toLowerCase());
+
+      if (match) {
+        pkg.status = 'published';
+        pkg.isUploaded = true;
+        pkg.youtubeVideoId = record.youtubeVideoId;
+        pkg.youtubeUrl = record.youtubeUrl;
+        pkg.uploadedAt = record.uploadedAt;
+      }
+    }
+
+    this.savePersistence();
+    this.emitState();
   }
 
   /**

@@ -116,6 +116,9 @@ const electronAPI = {
   youtubeLogout: () => ipcRenderer.invoke('youtube-auth:logout'),
   youtubeUploadVideo: (payload) => ipcRenderer.invoke('youtube-auth:upload-video', payload),
   youtubeGetAnalytics: () => ipcRenderer.invoke('youtube-auth:get-analytics'),
+  autopilotPublishNow: (packageId) => ipcRenderer.invoke('autopilot:publish-now', packageId),
+  uploadRegistryGetAll: () => ipcRenderer.invoke('upload-registry:get-all'),
+  uploadRegistryIsUploaded: (query) => ipcRenderer.invoke('upload-registry:is-uploaded', query),
   onYouTubeAuthUpdated: (callback) => {
     const subscription = (_event, value) => callback(value);
     ipcRenderer.on('youtube-auth:updated', subscription);
@@ -125,6 +128,11 @@ const electronAPI = {
     const subscription = (_event, value) => callback(value);
     ipcRenderer.on('youtube-upload:progress', subscription);
     return () => ipcRenderer.removeListener('youtube-upload:progress', subscription);
+  },
+  onClipUploaded: (callback) => {
+    const subscription = (_event, value) => callback(value);
+    ipcRenderer.on('clip:uploaded', subscription);
+    return () => ipcRenderer.removeListener('clip:uploaded', subscription);
   },
 };
 

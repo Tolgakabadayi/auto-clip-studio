@@ -237,6 +237,7 @@ export interface AutopilotSettings {
   seriesIntervalMinutes?: number; // Partlar arası yayın gecikmesi (dakika, varsayılan: 55)
   seriesOverlayBanner?: boolean; // Video üstüne "Part 1 | Devamı Part 2'de 👇" rozeti ekle (varsayılan: true)
   minSourceDurationSeconds?: number; // Kaynak video minimum süresi (varsayılan: 60)
+  minViewCount?: number; // Minimum izlenme eşiği (varsayılan: 100000)
 }
 
 export interface CCVideoCandidate {
@@ -251,6 +252,7 @@ export interface CCVideoCandidate {
   license: string;
   verifiedCC: boolean;
   discoveredAt: string;
+  category?: string;
 }
 
 export interface CuratedPitchCandidate {
@@ -269,6 +271,8 @@ export interface CuratedPitchCandidate {
   license: string;
   verifiedSafe: boolean;
   discoveredAt: string;
+  category?: string;
+  categoryBadge?: string;
   // Aliases
   videoId?: string;
   videoUrl?: string;

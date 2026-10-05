@@ -51,13 +51,20 @@ export class AutopilotService {
     // Terrorism, militant organizations, separatist / ethnic propaganda
     'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
     'gerilla', 'öcalan', 'ocalan', 'kandil', 'halkların demokratik', 'kürt hareketi', 'bölücü',
+    'kürt', 'kurt', 'kürdistan', 'kurdistan', 'peşmerge', 'pesmerge', 'rojava',
 
     // +18, Adult, NSFW, vulgar content
     '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak', 'mastürbasyon',
     'escort', 'jigolo', 'lezbiyen', 'gay', 'fahişe', 'aldatma itirafı +18',
 
     // Violence, gore, brutality, severe crimes
-    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence'
+    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence',
+
+    // School, Exam prep & Academic lectures (Permanently exclude Tonguç Akademi & test prep!)
+    'tonguç', 'tonguc', 'tonguç akademi', 'tonguc akademi', 'hocalara geldik', 'benim hocam',
+    'rehber matematik', 'rüştü hoca', 'mert hoca', 'şeref hoca', 'dershane', 'lgs', 'yks', 'kpss',
+    'öabt', 'ayt', 'tyt', 'soru çözümü', 'konu anlatımı', 'sınav hazırlık', 'ders notları',
+    'yazılıya hazırlık', 'eğitimhane', 'meb', 'okul dersi', 'sınav taktikleri'
   ];
 
   // Callbacks for broadcasting
@@ -114,6 +121,7 @@ export class AutopilotService {
       seriesIntervalMinutes: 55,
       seriesOverlayBanner: true,
       minSourceDurationSeconds: 60,
+      minViewCount: 100000,
     };
 
     // Initial state
@@ -343,15 +351,18 @@ export class AutopilotService {
     const aggregatedCandidates: CCVideoCandidate[] = [];
     const seenCandidateIds = new Set<string>();
     const seenBatchChannels = new Set<string>();
+    // Rotate and shuffle search terms to guarantee freshness across scans
+    const shuffledTerms = [...searchTerms].sort(() => 0.5 - Math.random());
 
-    for (const term of searchTerms) {
+    for (const term of shuffledTerms) {
       try {
+        const randomStart = 1 + Math.floor(Math.random() * 3);
         const ccSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}&sp=EgIwAQ%253D%253D`;
         const args = [
           ccSearchUrl,
           '--flat-playlist',
           '--dump-json',
-          '-I', `1:${limit + 10}`,
+          '-I', `${randomStart}:${randomStart + limit + 8}`,
           '--no-warnings',
         ];
 
@@ -398,12 +409,15 @@ export class AutopilotService {
     const lines = rawOutput.split(/\r?\n/).filter(Boolean);
     const seenChannelsInBatch = new Set<string>();
 
-    // Comprehensive blacklist of TV channels, commercial MCNs, and music labels
+    // Comprehensive blacklist of TV channels, commercial MCNs, music labels, and school lecture channels
     const riskyEntities = [
       'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
       'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
       'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
-      'poll production', 'dmc', 'sony music', 'universal music', 'believe music'
+      'poll production', 'dmc', 'sony music', 'universal music', 'believe music',
+      // School, curriculum & exam prep channels (permanently block Tonguç Akademi and course lectures)
+      'tonguç', 'tonguc', 'dershane', 'lgs', 'yks', 'kpss', 'öabt', 'akademi', 'hocalara', 'benim hocam',
+      'rehber matematik', 'rüştü hoca', 'mert hoca', 'soru çözümü', 'konu anlatımı'
     ];
 
     for (const line of lines) {
@@ -550,10 +564,20 @@ export class AutopilotService {
       }
     }
 
-    // STRICT VIRALITY SORT: Order candidates by view count descending
-    candidates.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+    // Prioritize candidates meeting minViewCount threshold
+    const minThreshold = this.settings.minViewCount || 0;
+    let filtered = candidates;
+    if (minThreshold > 0) {
+      const qualified = candidates.filter((c) => (c.viewCount || 0) >= minThreshold);
+      if (qualified.length >= Math.min(2, limit)) {
+        filtered = qualified;
+      }
+    }
 
-    return candidates.slice(0, limit);
+    // STRICT VIRALITY SORT: Order candidates by view count descending
+    filtered.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
+
+    return filtered.slice(0, limit);
   }
 
   /**

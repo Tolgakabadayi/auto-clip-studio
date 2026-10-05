@@ -1837,11 +1837,18 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                           className="bg-dark-950/80 border border-dark-750 hover:border-purple-500/50 rounded-2xl p-4 flex flex-col justify-between transition-all duration-200 shadow-lg group hover:shadow-purple-500/10"
                         >
                           <div className="space-y-3">
-                            {/* Card Top: Rank & Dynamic Virality Score */}
+                            {/* Card Top: Rank, Category Badge & Dynamic Virality Score */}
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-mono font-bold text-slate-400 px-2 py-0.5 rounded bg-dark-900 border border-dark-800">
-                                #{index + 1} ÖNCELİKLİ ADAY
-                              </span>
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[11px] font-mono font-bold text-slate-400 px-2 py-0.5 rounded bg-dark-900 border border-dark-800">
+                                  #{index + 1}
+                                </span>
+                                {(pitch.categoryBadge || pitch.category) && (
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    {pitch.categoryBadge || pitch.category}
+                                  </span>
+                                )}
+                              </div>
                               <div
                                 className={`flex items-center space-x-1.5 px-3 py-1 rounded-full border text-xs font-black shadow-sm ${scoreColor}`}
                               >
@@ -1855,8 +1862,14 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                               <h5 className="text-sm font-bold text-white line-clamp-2 leading-snug group-hover:text-amber-200 transition-colors">
                                 {pitch.title}
                               </h5>
-                              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 font-medium">
+                              <p className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-1.5 font-medium">
                                 <span>📺 Kanal: {pitch.channelTitle || pitch.channel || 'Bilinmeyen Kanal'}</span>
+                                {pitch.viewCount && pitch.viewCount > 0 ? (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-emerald-400 font-mono">👁️ {pitch.viewCount.toLocaleString()} izlenme</span>
+                                  </>
+                                ) : null}
                                 {((pitch.durationSeconds || pitch.duration || 0) > 0) && (
                                   <>
                                     <span>•</span>

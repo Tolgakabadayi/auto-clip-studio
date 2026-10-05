@@ -12,6 +12,89 @@ import {
 } from '../../src/types';
 import { FFmpegService } from './ffmpegService';
 import { YouTubeService } from './youtubeService';
+import { UploadRegistryService } from './uploadRegistryService';
+
+export interface DiscoveryCategory {
+  id: string;
+  name: string;
+  badge: string;
+  queries: string[];
+}
+
+export const STRATEGIC_DISCOVERY_CATEGORIES: DiscoveryCategory[] = [
+  {
+    id: 'interview_story',
+    name: 'Röportaj & Gerçek Hayat',
+    badge: '🎙️ Röportaj & Hayat',
+    queries: [
+      'sokak röportajı gerçek hayat hikayesi',
+      'hayat dersi röportaj samimi itiraf',
+      'etkileyici yaşam mücadelesi röportaj',
+      'türkiye sokak röportajı gerçek hikaye',
+      'derin röportaj ibretlik hayat hikayesi'
+    ]
+  },
+  {
+    id: 'podcast_talk',
+    name: 'Podcast & Derin Sohbet',
+    badge: '🎧 Podcast & Sohbet',
+    queries: [
+      'podcast derin sohbet hayat dersleri',
+      'samimi sohbet podcast hayat tecrübesi',
+      'ünlü konuk podcast çarpıcı itiraflar',
+      'felsefi sohbet derin muhabbet podcast',
+      'gece sohbeti podcast ilham veren'
+    ]
+  },
+  {
+    id: 'science_tech',
+    name: 'Bilim & Gelecek Teknolojisi',
+    badge: '🔬 Bilim & Gelecek',
+    queries: [
+      'evrenin sırları bilim belgesel anlatım',
+      'yapay zeka gelecek bilim sohbeti',
+      'kuantum fizik akıl almaz gerçekler',
+      'beyin nasıl çalışır nörobilim sohbet',
+      'uzay ve evren şaşırtıcı keşifler'
+    ]
+  },
+  {
+    id: 'psychology_mind',
+    name: 'Psikoloji & İnsan Zihni',
+    badge: '🧠 Psikoloji & Zihin',
+    queries: [
+      'psikoloji insan zihni manipülasyon',
+      'beden dili ve insan psikolojisi sohbet',
+      'kişisel farkındalık psikoloji dersleri',
+      'özgüven ve zihin felsefesi podcast',
+      'ilişki psikolojisi ve insan doğası'
+    ]
+  },
+  {
+    id: 'history_mystery',
+    name: 'Tarih & Çözülememiş Gizemler',
+    badge: '📜 Tarih & Gizem',
+    queries: [
+      'tarihin gizemli olayları belgesel sohbet',
+      'çözülemeyen sırlar dünya tarihi',
+      'antik uygarlıklar şaşırtıcı gerçekler',
+      'kayıp uygarlıklar tarihi hikayeler',
+      'tarihin dönüm noktaları anlatım'
+    ]
+  },
+  {
+    id: 'business_success',
+    name: 'Girişimcilik & Başarı Hikayesi',
+    badge: '🚀 Girişim & Başarı',
+    queries: [
+      'sıfırdan başarı hikayesi girişimcilik',
+      'milyoner olma hikayesi dersler tavsiyeler',
+      'nasıl başardı girişimcilik itirafları',
+      'başarısızlık ve yeniden doğuş hikayesi',
+      'finansal özgürlük vizyon röportaj'
+    ]
+  }
+];
 
 export interface AgencyRunOptions {
   ollamaHost?: string; // default: http://localhost:11434
@@ -35,7 +118,58 @@ export interface AgencyRunOptions {
 export class AgencyService {
   private ffmpegService: FFmpegService;
   private youtubeService?: YouTubeService;
+  private uploadRegistryService?: UploadRegistryService;
   private defaultHost = 'http://localhost:11434';
+  private seenMeetingCandidateIds: Set<string> = new Set();
+  private seenMeetingChannels: Set<string> = new Set();
+
+  private static BRAND_SAFETY_BLACKLIST = [
+    // Political parties, political figures, elections & propaganda
+    'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'iyip', 'zafer partisi',
+    'erdoğan', 'erdogan', 'recep tayyip', 'özgür özel', 'kılıçdaroğlu', 'mansur yavaş', 'ekrem imamoğlu',
+    'devlet bahçeli', 'selahattin demirtaş', 'siyaset', 'siyasi', 'seçim', 'milletvekili', 'meclis',
+    'tbmm', 'belediye başkanı', 'propaganda', 'hükümet', 'muhalefet', 'koalisyon', 'bakanlık',
+
+    // Terrorism, militant organizations, separatist / ethnic propaganda
+    'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
+    'gerilla', 'öcalan', 'ocalan', 'kandil', 'halkların demokratik', 'kürt hareketi', 'bölücü',
+    'kürt', 'kurt', 'kürdistan', 'kurdistan', 'peşmerge', 'pesmerge', 'rojava',
+
+    // +18, Adult, NSFW, vulgar content
+    '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak', 'mastürbasyon',
+    'escort', 'jigolo', 'lezbiyen', 'gay', 'fahişe', 'aldatma itirafı +18',
+
+    // Violence, gore, brutality, severe crimes
+    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence',
+
+    // School, exam prep & academic lectures (Permanently exclude Tonguç Akademi and course lectures)
+    'tonguç', 'tonguc', 'tonguç akademi', 'tonguc akademi', 'hocalara geldik', 'benim hocam',
+    'rehber matematik', 'rüştü hoca', 'mert hoca', 'şeref hoca', 'dershane', 'lgs', 'yks', 'kpss',
+    'öabt', 'ayt', 'tyt', 'soru çözümü', 'konu anlatımı', 'sınav hazırlık', 'ders notları',
+    'yazılıya hazırlık', 'eğitimhane', 'meb', 'okul dersi', 'sınav taktikleri'
+  ];
+
+  private static RISKY_ENTITIES = [
+    'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
+    'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
+    'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
+    'poll production', 'dmc', 'sony music', 'universal music', 'believe music',
+    // School, curriculum & exam prep channels (block Tonguç Akademi, etc.)
+    'tonguç', 'tonguc', 'dershane', 'lgs', 'yks', 'kpss', 'öabt', 'akademi', 'hocalara', 'benim hocam',
+    'rehber matematik', 'rüştü hoca', 'mert hoca', 'soru çözümü', 'konu anlatımı'
+  ];
+
+  public checkBrandSafety(text: string): { safe: boolean; reason?: string } {
+    if (!text) return { safe: true };
+    const lower = text.toLowerCase();
+    for (const banned of AgencyService.BRAND_SAFETY_BLACKLIST) {
+      const regex = new RegExp(`(^|[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ])${banned}([^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]|$)`, 'i');
+      if (regex.test(lower) || lower.includes(banned)) {
+        return { safe: false, reason: banned };
+      }
+    }
+    return { safe: true };
+  }
 
   public static DEFAULT_AGENTS: AgencyAgentConfig[] = [
     {
@@ -175,13 +309,18 @@ export class AgencyService {
     },
   ];
 
-  constructor(ffmpegService: FFmpegService, youtubeService?: YouTubeService) {
+  constructor(ffmpegService: FFmpegService, youtubeService?: YouTubeService, uploadRegistryService?: UploadRegistryService) {
     this.ffmpegService = ffmpegService;
     this.youtubeService = youtubeService;
+    this.uploadRegistryService = uploadRegistryService;
   }
 
   public setYouTubeService(youtubeService: YouTubeService): void {
     this.youtubeService = youtubeService;
+  }
+
+  public setUploadRegistryService(uploadRegistryService: UploadRegistryService): void {
+    this.uploadRegistryService = uploadRegistryService;
   }
 
   /**
@@ -1484,6 +1623,8 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
       `${customKeyword || niche} podcast sohbet`,
       'gerçek hayat hikayeleri röportaj',
       'sokak röportajı hayat dersi',
+      'samimi röportaj itiraflar',
+      'derin sohbet podcast hayat tecrübesi',
     ];
 
     try {
@@ -1492,6 +1633,7 @@ Hedef Niş / Kategori: "${niche}"
 ${customKeyword ? `Özel Arama Terimi: "${customKeyword}"` : ''}
 
 GÖREV: YouTube üzerinde Creative Commons (CC-BY) lisanslı, yüksek izlenme potansiyeline sahip, özellikle GERÇEK HAYAT HİKAYELERİ, SAMİMİ RÖPORTAJLAR, İTİRAFLAR, İLHAM VERİCİ YAŞAM DERSLERİ ve DERİN PODCAST SOHBETLERİ içeren videoları bulmak için 3 adet vurucu arama sorgusu üret.
+KESİNLİKLE YASAK: Okul dersleri, Tonguç Akademi, sınavlar (LGS, YKS, KPSS), soru çözümleri, siyasi partiler, terörizm veya +18 içerikler KESİNLİKLE ÜRETİLEMEZ.
 Sorgular doğrudan YouTube arama çubuğuna yazılacak şekilde Türkçe olsun (Örn: "gerçek hayat hikayesi röportaj", "yaşam mücadelesi podcast", "sokak röportajı hayat dersi").
 
 SADECE JSON FORMATINDA DİZİ VER:
@@ -1772,6 +1914,7 @@ SADECE JSON FORMATINDA DİZİ VER:
   public async runStrategicDiscoveryMeeting(options: {
     niche?: string;
     keyword?: string;
+    minViewCount?: number;
     agents?: AgencyAgentConfig[];
     onMessage?: (message: AgencyMessage) => void;
     onProgress?: (progress: AgencyProgressEvent) => void;
@@ -1780,8 +1923,6 @@ SADECE JSON FORMATINDA DİZİ VER:
     candidates: CuratedPitchCandidate[];
     meetingSummary: string;
   }> {
-    const niche = options.niche || 'yapay zeka ve podcast';
-    const keyword = options.keyword;
     const agents = options.agents || AgencyService.DEFAULT_AGENTS;
 
     const director = this.getAgent(agents, 'art_director');
@@ -1792,11 +1933,11 @@ SADECE JSON FORMATINDA DİZİ VER:
     const seo = this.getAgent(agents, 'seo_specialist');
     const security = this.getAgent(agents, 'security_supervisor');
 
-    // 1. OPENING: CEO & Director open strategic meeting
+    // 1. OPENING: CEO & Director open strategic meeting across 6 categories
     options.onProgress?.({
       phase: 'ceo_curation',
       percent: 10,
-      message: `${ceo.name} & ${director.name} stratejik viral içerik toplantısını açıyor...`,
+      message: `${ceo.name} & ${director.name} 6 Kategorili Stratejik Keşif Toplantısını açıyor...`,
       activeAgent: 'ceo',
     });
 
@@ -1806,7 +1947,7 @@ SADECE JSON FORMATINDA DİZİ VER:
       ceo.name,
       ceo.model,
       'thought',
-      `Stratejik Beyin Fırtınası & Viral Keşif Toplantısını açıyorum. Gündem: "${niche}" kategorisinde algoritmada patlama yapacak, yüksek kanca gücüne sahip ve %100 telifsiz kaynak videoları tespit etmek.`
+      `Stratejik Beyin Fırtınası Toplantısını açıyorum! Kanal çeşitliliğini maksimize etmek ve tek kanala (Tonguç vb.) bağımlılığı sıfırlamak için 6 farklı kategoride (Röportaj & Gerçek Hayat, Podcast & Sohbet, Bilim & Teknoloji, Psikoloji, Tarih & Gizem, Girişimcilik) en az 6 adet %100 Creative Commons adayı tespit edeceğiz.`
     );
 
     this.emitMessage(
@@ -1815,50 +1956,168 @@ SADECE JSON FORMATINDA DİZİ VER:
       director.name,
       director.model,
       'action',
-      `@RadarScout @TrendHunter: Canlı YouTube Creative Commons indeksini tarayın. Sadece %100 CC-BY tescilli ve sıfır ticari fon müziği içeren, ilk 5 saniyesinde merak uyandıran adayları masaya getirin.`
+      `@RadarScout @TrendHunter @SentinelGuard: 6 niş kategoriyi eş zamanlı tarayın. Sadece %100 CC-BY tescilli, ticari müziği olmayan, siyasi/terör/+18 ve okul/sınav dersi riski taşımayan, her biri FARKLI kanallardan 6 elit videoyu masaya getirin.`
     );
 
-    // 2. DISCOVERY: Radar Scout & Trend Hunter search YouTube CC
+    // 2. DISCOVERY & AUDIT: Multi-category search (1 video per category, 6 distinct channels)
     options.onProgress?.({
       phase: 'hunting',
       percent: 30,
-      message: `${scout.name} & ${hunter.name} YouTube CC trendlerini tarıyor...`,
+      message: `${scout.name} & ${hunter.name} 6 ana kategoride YouTube CC trendlerini tarıyor...`,
       activeAgent: 'trend_hunter',
     });
 
-    const searchQueries = [
-      keyword ? `${keyword} podcast` : `${niche} podcast`,
-      `${niche} sohbet`,
-      `${niche} röportaj`,
-    ];
+    const categoryWinners: { [catId: string]: any } = {};
+    const finalPitches: CuratedPitchCandidate[] = [];
+    const meetingUsedChannels = new Set<string>();
 
-    const rawCandidates: any[] = [];
     if (this.youtubeService) {
-      for (const query of searchQueries) {
-        if (rawCandidates.length >= 6) break;
-        try {
-          const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIwAQ%253D%253D`;
-          const rawOutput = await this.youtubeService.executeYtDlp([
-            searchUrl,
-            '--flat-playlist',
-            '--dump-json',
-            '-I', '1:6',
-            '--no-warnings',
-          ]);
-          const lines = rawOutput.split(/\r?\n/).filter(Boolean);
-          for (const line of lines) {
-            try {
-              const item = JSON.parse(line.trim());
-              if (item.id && item.title && !rawCandidates.some((c) => c.id === item.id)) {
-                rawCandidates.push(item);
+      for (let cIdx = 0; cIdx < STRATEGIC_DISCOVERY_CATEGORIES.length; cIdx++) {
+        const cat = STRATEGIC_DISCOVERY_CATEGORIES[cIdx];
+        const progressPercent = 30 + Math.round((cIdx / STRATEGIC_DISCOVERY_CATEGORIES.length) * 35);
+
+        options.onProgress?.({
+          phase: 'hunting',
+          percent: progressPercent,
+          message: `[Kategori ${cIdx + 1}/6: ${cat.badge}] taranıyor...`,
+          activeAgent: 'trend_hunter',
+        });
+
+        // Pick queries: mix user keyword if present, shuffle queries for novelty
+        const shuffledQueries = [...cat.queries].sort(() => 0.5 - Math.random());
+        if (options.keyword) {
+          shuffledQueries.unshift(`${options.keyword} ${cat.name}`);
+        }
+
+        // Randomize playlist search offset between 1..4 so repeated clicks don't return the exact same items
+        const randomOffset = 1 + Math.floor(Math.random() * 3);
+
+        let categoryCandidateFound = false;
+
+        for (const query of shuffledQueries) {
+          if (categoryCandidateFound) break;
+
+          try {
+            const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIwAQ%253D%253D`;
+            const rawOutput = await this.youtubeService.executeYtDlp([
+              searchUrl,
+              '--flat-playlist',
+              '--dump-json',
+              '-I', `${randomOffset}:${randomOffset + 14}`,
+              '--no-warnings',
+            ]);
+
+            const lines = rawOutput.split(/\r?\n/).filter(Boolean);
+
+            for (const line of lines) {
+              if (categoryCandidateFound) break;
+
+              let item: any;
+              try {
+                item = JSON.parse(line.trim());
+              } catch {
+                continue;
               }
-            } catch {}
+
+              if (!item.id || !item.title) continue;
+
+              // 1. Session & History Deduplication: Skip if seen or uploaded
+              if (
+                this.seenMeetingCandidateIds.has(item.id) ||
+                this.uploadRegistryService?.isUploaded({ sourceVideoId: item.id })
+              ) {
+                continue;
+              }
+
+              const channelName = (item.uploader || item.channel || '').toLowerCase().trim();
+              const titleLower = item.title.toLowerCase();
+              const descLower = (item.description || '').toLowerCase();
+
+              // 2. Channel Diversity: Strictly 1 video per channel in this meeting & avoid repeated meeting channels
+              if (meetingUsedChannels.has(channelName) || this.seenMeetingChannels.has(channelName)) {
+                continue;
+              }
+
+              // 3. Risky entities / School / Test prep blacklist (No Tonguç Akademi, exam lectures, etc.)
+              const isRisky = AgencyService.RISKY_ENTITIES.some((r) => channelName.includes(r) || titleLower.includes(r));
+              if (isRisky) {
+                continue;
+              }
+
+              // 4. Brand Safety: Zero political polemics, terrorism, ethnic conflict, or +18 vulgarity
+              const safety = this.checkBrandSafety(`${item.title} ${channelName} ${descLower}`);
+              if (!safety.safe) {
+                continue;
+              }
+
+              // 5. Duration sanity check: 40s to 3 hours
+              const rawDuration = Number(item.duration) || 0;
+              if (rawDuration > 0 && (rawDuration < 40 || rawDuration > 10800)) {
+                continue;
+              }
+
+              // 6. Deep probe with YouTubeService: Guarantee CC license & zero commercial music
+              try {
+                const probe = await this.youtubeService.probeVideoFull(`https://www.youtube.com/watch?v=${item.id}`);
+
+                if (!probe.isCreativeCommons) continue;
+                if (probe.hasCommercialMusic) continue;
+
+                // Probe description check
+                const pDesc = (probe.description || '').toLowerCase();
+                if (
+                  pDesc.includes('provided to youtube by') ||
+                  pDesc.includes('sound recording administered by') ||
+                  pDesc.includes('universal music group') ||
+                  pDesc.includes('sony music') ||
+                  pDesc.includes('wediacorp')
+                ) {
+                  continue;
+                }
+
+                // Brand safety on probed title & description
+                const probeSafety = this.checkBrandSafety(`${probe.title} ${probe.channel || ''} ${pDesc}`);
+                if (!probeSafety.safe) continue;
+
+                // Check minimum view threshold (if user specified e.g. 100k, 300k)
+                const probeViews = probe.viewCount || Number(item.view_count) || 0;
+                if (options.minViewCount && options.minViewCount > 0 && probeViews < options.minViewCount) {
+                  // Keep as fallback if no better candidate exists, but continue looking if possible
+                  if (!categoryWinners[cat.id]) {
+                    categoryWinners[cat.id] = { item, probe, cat, isSubThreshold: true };
+                  }
+                  continue;
+                }
+
+                // Winner found for this category!
+                categoryWinners[cat.id] = { item, probe, cat, isSubThreshold: false };
+                categoryCandidateFound = true;
+                meetingUsedChannels.add(channelName);
+                this.seenMeetingChannels.add(channelName);
+                this.seenMeetingCandidateIds.add(item.id);
+
+                this.emitMessage(
+                  options as any,
+                  'security_supervisor',
+                  security.name,
+                  security.model,
+                  'approval',
+                  `✓ [${cat.badge}] "${probe.title.slice(0, 35)}..." (${probe.channel}) %100 CC-BY ve sıfır ticari müzik olarak onaylandı.`
+                );
+                break;
+              } catch (probeErr: any) {
+                console.warn(`[AgencyDiscovery] Probe failed for ${item.id}:`, probeErr.message);
+              }
+            }
+          } catch (searchErr: any) {
+            console.warn(`[AgencyDiscovery] Search warning for "${query}":`, searchErr.message);
           }
-        } catch (e: any) {
-          console.warn('[DiscoveryMeeting] Search warning:', e.message);
         }
       }
     }
+
+    // 3. AUDIT & COMPILE ALL CATEGORY WINNERS
+    const winnerEntries = Object.values(categoryWinners);
 
     this.emitMessage(
       options as any,
@@ -1866,78 +2125,38 @@ SADECE JSON FORMATINDA DİZİ VER:
       scout.name,
       scout.model,
       'action',
-      `YouTube CC indeksinde ${rawCandidates.length} potansiyel aday tespit edildi. Dosyaları telif, ticari fon müziği ve Content ID taraması için @SentinelGuard'a iletiyorum.`
+      `Farklı kategorilerde ${winnerEntries.length} adet bağımsız kanal adayı başarıyla doğrulandı. Kanca ve virallik analizi için @HookMaster ve @SEOQwen'e aktarılıyor.`
     );
-
-    // 3. AUDIT & DEEP PROBE: Sentinel Guard audits candidates
-    options.onProgress?.({
-      phase: 'security_audit',
-      percent: 55,
-      message: `${security.name} aday videoların lisans ve fon müziği güvenliğini teftiş ediyor...`,
-      activeAgent: 'security_supervisor',
-    });
-
-    this.emitMessage(
-      options as any,
-      'security_supervisor',
-      security.name,
-      security.model,
-      'thought',
-      `Aday videoların YouTube lisans tescilini ve Content ID ticari fon müziği izlerini inceliyorum. WediaCorp, GAİN ve ses telifli parçalar taranıyor...`
-    );
-
-    const verifiedList: any[] = [];
-    if (this.youtubeService) {
-      for (const cand of rawCandidates) {
-        if (verifiedList.length >= 3) break;
-        try {
-          const probe = await this.youtubeService.probeVideoFull(`https://www.youtube.com/watch?v=${cand.id}`);
-          if (probe.isCreativeCommons && !probe.hasCommercialMusic) {
-            verifiedList.push({ ...cand, probe });
-            this.emitMessage(
-              options as any,
-              'security_supervisor',
-              security.name,
-              security.model,
-              'approval',
-              `✓ "${probe.title.slice(0, 40)}..." lisansı %100 CC-BY ve sıfır ticari müzik olarak onaylandı.`
-            );
-          }
-        } catch {}
-      }
-    }
 
     // 4. PSYCHOLOGICAL HOOK & VIRALITY ANALYSIS: Hook Master & SEO Specialist
     options.onProgress?.({
       phase: 'hook_design',
       percent: 75,
-      message: `${hookMaster.name} & ${seo.name} kanca psikolojisini ve virallik oranlarını hesaplıyor...`,
+      message: `${hookMaster.name} & ${seo.name} 6 kategorideki adayların virallik oranlarını hesaplıyor...`,
       activeAgent: 'hook_architect',
     });
 
-    const finalPitches: CuratedPitchCandidate[] = [];
-
-    for (let i = 0; i < verifiedList.length; i++) {
-      const v = verifiedList[i];
-      const p = v.probe;
-      const duration = p.duration || Number(v.duration) || 180;
+    for (let i = 0; i < winnerEntries.length; i++) {
+      const { item, probe, cat } = winnerEntries[i];
+      const duration = probe.duration || Number(item.duration) || 180;
       const mins = Math.floor(duration / 60);
       const secs = Math.floor(duration % 60);
+      const viewCount = probe.viewCount || Number(item.view_count) || 0;
 
-      // REAL DYNAMIC VIRALITY SCORE CALCULATION (NEVER A HARDCODED 88!)
+      // DYNAMIC REAL VIRALITY SCORE CALCULATION
       const baseScore = 78;
-      const viewFactor = Math.min(12, Math.round(Math.log10(Math.max(500, p.viewCount || 1000)) * 2.5));
-      const hasCuriosityTitle = /[?!]|neden|nasıl|sakın|şok|gerçek|büyük|sır|hata/i.test(p.title);
+      const viewFactor = Math.min(12, Math.round(Math.log10(Math.max(500, viewCount)) * 2.5));
+      const hasCuriosityTitle = /[?!]|neden|nasıl|sakın|şok|gerçek|büyük|sır|hata|hayat|itiraf/i.test(probe.title);
       const curiosityBonus = hasCuriosityTitle ? 6 : 2;
-      const durBonus = duration >= 180 && duration <= 3600 ? 4 : 1;
-      const variation = ((i * 7) % 5);
+      const durBonus = duration >= 120 && duration <= 3600 ? 4 : 1;
+      const variation = ((i * 7 + Math.floor(Math.random() * 3)) % 5);
       const viralityScore = Math.min(98, Math.max(76, baseScore + viewFactor + curiosityBonus + durBonus - variation));
 
       const hookAnalysis = hasCuriosityTitle
-        ? 'İzleyicide derin merak boşluğu (curiosity gap) oluşturan güçlü başlık ve kaydırmayı durduran açılış.'
-        : 'Konuşmacının doğrudan konuya girdiği, yüksek tempolu ve dikkat çekici anlatım yapısı.';
+        ? `[${cat.badge}] İzleyicide merak boşluğu (curiosity gap) oluşturan güçlü başlık ve kaydırmayı durduran açılış.`
+        : `[${cat.badge}] Konuşmacının doğrudan konuya girdiği, yüksek tempolu ve dikkat çekici anlatım yapısı.`;
 
-      const seoAngle = `"${niche}" dikeyinde yüksek arama hacmi. Shorts akışında benzer kurgular ortalama 300K+ izlenmeye ulaşıyor.`;
+      const seoAngle = `"${cat.name}" dikeyinde yüksek aranma hacmi. Shorts akışında benzer kurgular ortalama 300K+ izlenmeye ulaşıyor.`;
 
       this.emitMessage(
         options as any,
@@ -1945,28 +2164,30 @@ SADECE JSON FORMATINDA DİZİ VER:
         hookMaster.name,
         hookMaster.model,
         'action',
-        `Aday #${i + 1}: "${p.title.slice(0, 35)}..." için virallik skoru %${viralityScore} olarak hesaplandı. ${hookAnalysis}`
+        `Aday #${i + 1} [${cat.badge}]: "${probe.title.slice(0, 35)}..." için virallik skoru %${viralityScore} olarak puanlandı. ${hookAnalysis}`
       );
 
       finalPitches.push({
-        id: p.id,
-        url: `https://www.youtube.com/watch?v=${p.id}`,
-        title: p.title,
-        channel: p.channel || 'Bilinmeyen Kanal',
+        id: probe.id,
+        url: `https://www.youtube.com/watch?v=${probe.id}`,
+        title: probe.title,
+        channel: probe.channel || item.uploader || 'Bilinmeyen Kanal',
         duration,
         durationFormatted: `${mins}:${secs.toString().padStart(2, '0')}`,
-        viewCount: p.viewCount || 0,
-        thumbnailUrl: p.thumbnailUrl || (Array.isArray(v.thumbnails) && v.thumbnails[0]?.url) || '',
+        viewCount,
+        thumbnailUrl: probe.thumbnailUrl || (Array.isArray(item.thumbnails) && item.thumbnails[0]?.url) || '',
         viralityScore,
         hookAnalysis,
         seoAngle,
-        targetAudience: niche,
+        targetAudience: cat.name,
         license: 'Creative Commons Attribution (CC-BY 4.0)',
         verifiedSafe: true,
         discoveredAt: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-        videoId: p.id,
-        videoUrl: `https://www.youtube.com/watch?v=${p.id}`,
-        channelTitle: p.channel || 'Bilinmeyen Kanal',
+        category: cat.name,
+        categoryBadge: cat.badge,
+        videoId: probe.id,
+        videoUrl: `https://www.youtube.com/watch?v=${probe.id}`,
+        channelTitle: probe.channel || item.uploader || 'Bilinmeyen Kanal',
         durationSeconds: duration,
       });
     }
@@ -1975,7 +2196,7 @@ SADECE JSON FORMATINDA DİZİ VER:
     options.onProgress?.({
       phase: 'completed',
       percent: 100,
-      message: `Toplantı tamamlandı! ${finalPitches.length} onaylı viral aday Yaratıcı Onay Masasına sunuldu.`,
+      message: `Toplantı tamamlandı! ${finalPitches.length} farklı kategoriden onaylı viral aday Yaratıcı Onay Masasına sunuldu.`,
       activeAgent: 'art_director',
     });
 
@@ -1985,10 +2206,10 @@ SADECE JSON FORMATINDA DİZİ VER:
       ceo.name,
       ceo.model,
       'decision',
-      `📋 Strateji toplantısı başarıyla tamamlandı! Ekibimiz tarafından derinlemesine incelenen ve ${finalPitches.map(p => `"%${p.viralityScore} ${p.title.slice(0, 20)}..."`).join(', ')} oranlarına sahip ${finalPitches.length} video Yaratıcı Onay Paneline (Pitch Deck) sunuldu. Seçilen içerik anında kurgu hattına alınacak.`
+      `📋 Strateji toplantısı başarıyla tamamlandı! 6 farklı kategoriden (Röportaj, Podcast, Bilim, Psikoloji, Tarih, Girişimcilik) seçilen ve ${finalPitches.map((p) => `"${p.categoryBadge} %${p.viralityScore}"`).join(', ')} skorlarına sahip ${finalPitches.length} video Yaratıcı Onay Masasına (Pitch Deck) sunuldu. İstediğiniz videoyu seçip tek tıkla üretime alabilirsiniz.`
     );
 
-    const summary = `${finalPitches.length} adet %100 lisanslı ve yüksek virallik potansiyeline sahip aday video başarıyla hazırlandı.`;
+    const summary = `${finalPitches.length} adet farklı kategoride ve bağımsız kanallarda %100 lisanslı viral aday video başarıyla hazırlandı.`;
 
     return {
       candidates: finalPitches,

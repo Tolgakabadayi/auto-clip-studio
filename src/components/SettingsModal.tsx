@@ -156,6 +156,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   });
 
+  // Autopilot Settings & Min Views
+  const [apSettings, setApSettings] = useState<any>(null);
+  const [minViewThreshold, setMinViewThreshold] = useState<number>(300000);
+
+  useEffect(() => {
+    if (isOpen && window.electronAPI?.autopilotGetSettings) {
+      window.electronAPI.autopilotGetSettings().then((s: any) => {
+        if (s) {
+          setApSettings(s);
+          if (typeof s.minViewCount === 'number') {
+            setMinViewThreshold(s.minViewCount);
+          }
+        }
+      }).catch(console.error);
+    }
+  }, [isOpen]);
+
+  const handleMinViewChange = async (val: number) => {
+    setMinViewThreshold(val);
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      try {
+        const updated = await window.electronAPI.autopilotUpdateSettings({ minViewCount: val });
+        setApSettings(updated);
+        setShowSaveToast(true);
+        setTimeout(() => setShowSaveToast(false), 2000);
+      } catch (err) {
+        console.error('Failed to update min view count:', err);
+      }
+    }
+  };
+
   // Office Agents State for custom model assignments
   const [officeAgents, setOfficeAgents] = useState<AgentOfficeNode[]>(() => {
     try {
@@ -1554,11 +1585,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       Minimum İzlenme Eşiği
                     </label>
                     <select
-                      defaultValue="300000"
+                      value={minViewThreshold}
+                      onChange={(e) => handleMinViewChange(Number(e.target.value))}
                       className="w-full bg-dark-850 border border-dark-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple"
                     >
-                      <option value="100000">100.000+ İzlenme</option>
+                      <option value="50000">50.000+ İzlenme (Geniş Havuz)</option>
+                      <option value="100000">100.000+ İzlenme (Dengeli)</option>
                       <option value="300000">300.000+ İzlenme (Önerilen)</option>
+                      <option value="500000">500.000+ İzlenme (Popüler)</option>
                       <option value="1000000">1.000.000+ Viral Mega Hit</option>
                       <option value="3000000">3.000.000+ Süper Viral</option>
                     </select>

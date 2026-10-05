@@ -181,9 +181,9 @@ const whisperService = new WhisperService();
 const llmService = new LLMService();
 const youtubeService = new YouTubeService();
 const faceTrackingService = new FaceTrackingService();
-const agencyService = new AgencyService(ffmpegService, youtubeService);
-const googleAuthService = new GoogleAuthService();
 const uploadRegistryService = new UploadRegistryService();
+const agencyService = new AgencyService(ffmpegService, youtubeService, uploadRegistryService);
+const googleAuthService = new GoogleAuthService();
 const autopilotService = new AutopilotService(
   youtubeService,
   whisperService,
@@ -1137,12 +1137,13 @@ ipcMain.handle('agency:start-discovery-meeting', async (_event, payload?: { nich
   };
 
   const apSettings = autopilotService.getSettings();
-  const niche = payload?.niche || apSettings.selectedNiche || 'yapay zeka ve teknoloji';
+  const niche = payload?.niche || apSettings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri';
   const keyword = payload?.keyword || apSettings.customKeyword || undefined;
 
   const result = await agencyService.runStrategicDiscoveryMeeting({
     niche,
     keyword,
+    minViewCount: apSettings.minViewCount,
     onMessage: sendAgencyMessage,
     onProgress: sendAgencyProgress,
     onLog: sendLog,

@@ -1185,6 +1185,27 @@ Lisans: Creative Commons Attribution (CC-BY)
                     className="bg-dark-850 border border-dark-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-purple"
                   />
                 </div>
+
+                <div className="pt-2 border-t border-dark-750/70">
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Minimum İzlenme Eşiği
+                  </label>
+                  <select
+                    value={settings?.minViewCount || 100000}
+                    onChange={(e) => updateSettingsField({ minViewCount: Number(e.target.value) })}
+                    className="w-full bg-dark-850 border border-dark-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-purple"
+                  >
+                    <option value="50000">50.000+ İzlenme (Geniş Havuz)</option>
+                    <option value="100000">100.000+ İzlenme (Dengeli)</option>
+                    <option value="300000">300.000+ İzlenme (Önerilen Popüler)</option>
+                    <option value="500000">500.000+ İzlenme (Yüksek İlgi)</option>
+                    <option value="1000000">1.000.000+ Viral Mega Hit</option>
+                    <option value="3000000">3.000.000+ Süper Viral</option>
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Bu eşiğin üzerindeki popüler videolar aranır; havuz yetersiz olursa en yüksek izlenenler seçilir.
+                  </span>
+                </div>
               </div>
 
               {/* Düzen & Format */}

@@ -725,11 +725,11 @@ export class IsometricOffice3D {
     canvas.width = 1024;
     canvas.height = 512;
     this.renderScoreboardCanvas(canvas, {
-      totalViews: 1420500,
-      subscriberCount: 48500,
-      totalVideos: 24,
-      nextScheduled: '18:30 (12 dk kaldı)',
-      monetizationStatus: 'GÜVENLİ (%100)',
+      totalViews: 0,
+      subscriberCount: 0,
+      totalVideos: 0,
+      nextScheduled: 'Otomatik Beklemede',
+      totalLikes: 0,
     });
 
     this.scoreboardTexture = new THREE.CanvasTexture(canvas);
@@ -770,7 +770,8 @@ export class IsometricOffice3D {
       subscriberCount?: number;
       totalVideos?: number;
       nextScheduled?: string;
-      monetizationStatus?: string;
+      totalLikes?: number;
+      sumOfVideoViews?: number;
     }
   ): void {
     const ctx = canvas.getContext('2d')!;
@@ -818,31 +819,31 @@ export class IsometricOffice3D {
     ctx.fillStyle = '#34d399';
     ctx.fillText('● 24/7 OTOMATİK YAYIN AKTİF', canvas.width - 32, 38);
 
-    // 4 Score Cards (Views, Subs, Videos, Monetization)
+    // 4 Real-time Score Cards (Total Views, Live Subs, Published Shorts, Total Engagement)
     const cards = [
       {
         label: 'TOPLAM İZLENME',
-        value: stats.totalViews ? stats.totalViews.toLocaleString('tr-TR') : '1,420,500',
+        value: stats.totalViews !== undefined ? stats.totalViews.toLocaleString('tr-TR') : '0',
         color: '#f43f5e',
-        badge: '+18.4% İvme',
+        badge: 'Canlı YouTube',
       },
       {
         label: 'ABONE SAYISI',
-        value: stats.subscriberCount ? stats.subscriberCount.toLocaleString('tr-TR') : '48,500',
+        value: stats.subscriberCount !== undefined ? stats.subscriberCount.toLocaleString('tr-TR') : '0',
         color: '#38bdf8',
         badge: 'Canlı Büyüme',
       },
       {
         label: 'YÜKLENEN SHORTS',
-        value: stats.totalVideos ? `${stats.totalVideos} Video` : '24 Video',
+        value: stats.totalVideos !== undefined ? `${stats.totalVideos} Video` : '0 Video',
         color: '#fbbf24',
-        badge: 'Otomatik Üretim',
+        badge: 'Otopilot & Stüdyo',
       },
       {
-        label: 'TELİF & MONETİZASYON',
-        value: stats.monetizationStatus || 'GÜVENLİ (%100)',
+        label: 'TOPLAM ETKİLEŞİM',
+        value: stats.totalLikes !== undefined ? `${stats.totalLikes.toLocaleString('tr-TR')} Beğeni` : 'Canlı Etkileşim',
         color: '#10b981',
-        badge: 'CC-BY Lisanslı',
+        badge: 'Topluluk Reaksiyonu',
       },
     ];
 
@@ -909,7 +910,8 @@ export class IsometricOffice3D {
     subscriberCount?: number;
     totalVideos?: number;
     nextScheduled?: string;
-    monetizationStatus?: string;
+    totalLikes?: number;
+    sumOfVideoViews?: number;
   }): void {
     if (!this.scoreboardTexture || !this.scoreboardTexture.image) return;
     this.renderScoreboardCanvas(this.scoreboardTexture.image, stats);

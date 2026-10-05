@@ -488,6 +488,12 @@ export class GoogleAuthService {
       description = `${description}\n\n#Shorts #Viral #AutoClipAI`;
     }
 
+    // Append open-source project promotion marked as advertisement / attribution
+    const promoLink = 'https://github.com/Tolgakabadayi/auto-clip-studio';
+    if (!description.includes(promoLink)) {
+      description += `\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: ${promoLink} (Reklam / Açık Kaynak Projemiz)`;
+    }
+
     const tags = payload.tags && payload.tags.length > 0
       ? payload.tags
       : ['Shorts', 'AI', 'AutoClip', 'Viral'];
@@ -535,16 +541,44 @@ export class GoogleAuthService {
     // Upload custom thumbnail if provided and file exists
     if (payload.thumbnailPath && fs.existsSync(payload.thumbnailPath)) {
       try {
-        console.log(`[GoogleAuthService] Uploading custom thumbnail for video ${videoId}: ${payload.thumbnailPath}`);
-        await youtube.thumbnails.set({
-          videoId,
-          media: {
-            body: fs.createReadStream(payload.thumbnailPath),
-          },
-        });
-        console.log(`[GoogleAuthService] Custom thumbnail uploaded successfully for ${videoId}!`);
+        const thumbStat = fs.statSync(payload.thumbnailPath);
+        // YouTube requires thumbnails under 2MB
+        if (thumbStat.size > 0 && thumbStat.size <= 2 * 1024 * 1024) {
+          console.log(`[GoogleAuthService] Uploading custom thumbnail for video ${videoId}: ${payload.thumbnailPath} (${Math.round(thumbStat.size / 1024)}KB)`);
+          
+          // Wait 2.5 seconds to allow YouTube to initialize the video asset container
+          await new Promise((r) => setTimeout(r, 2500));
+
+          const ext = path.extname(payload.thumbnailPath).toLowerCase();
+          const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+
+          let uploaded = false;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              await youtube.thumbnails.set({
+                videoId,
+                media: {
+                  mimeType,
+                  body: fs.createReadStream(payload.thumbnailPath),
+                },
+              });
+              uploaded = true;
+              console.log(`[GoogleAuthService] Custom thumbnail uploaded successfully for ${videoId}!`);
+              break;
+            } catch (retryErr: any) {
+              console.warn(`[GoogleAuthService] Thumbnail upload attempt ${attempt} warning:`, retryErr.message);
+              if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 3000));
+              }
+            }
+          }
+
+          if (!uploaded) {
+            console.warn(`[GoogleAuthService] Custom thumbnail could not be set (channel may require SMS verification or video still processing). Standard video frame retained.`);
+          }
+        }
       } catch (thumbErr: any) {
-        console.warn(`[GoogleAuthService] Custom thumbnail upload note (may require verified YouTube channel):`, thumbErr.message);
+        console.warn(`[GoogleAuthService] Custom thumbnail processing note:`, thumbErr.message);
       }
     }
 
@@ -665,12 +699,20 @@ export class GoogleAuthService {
       }
     }
 
+      const sumOfVideoViews = videos.reduce((acc: number, v: any) => acc + (v.viewCount || 0), 0);
+      const computedTotalViews = Math.max(parseInt(ch.statistics?.viewCount || '0', 10), sumOfVideoViews);
+      const totalLikes = videos.reduce((acc: number, v: any) => acc + (v.likeCount || 0), 0);
+      const totalComments = videos.reduce((acc: number, v: any) => acc + (v.commentCount || 0), 0);
+
       return {
         isAuthenticated: true,
         channel: channelInfo,
-        totalViews: parseInt(ch.statistics?.viewCount || '0', 10),
+        totalViews: computedTotalViews,
+        sumOfVideoViews,
+        totalLikes,
+        totalComments,
         subscriberCount: parseInt(ch.statistics?.subscriberCount || '0', 10),
-        totalVideos: parseInt(ch.statistics?.videoCount || '0', 10),
+        totalVideos: Math.max(parseInt(ch.statistics?.videoCount || '0', 10), videos.length),
         videos,
         nextScheduledUpload: nextScheduledUpload || null,
         lastUpdated: new Date().toISOString(),
@@ -681,6 +723,9 @@ export class GoogleAuthService {
         isAuthenticated: false,
         channel: null,
         totalViews: 0,
+        sumOfVideoViews: 0,
+        totalLikes: 0,
+        totalComments: 0,
         subscriberCount: 0,
         totalVideos: 0,
         videos: [],

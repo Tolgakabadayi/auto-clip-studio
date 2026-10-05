@@ -519,11 +519,12 @@ ipcMain.handle('video:extract-frame', async (_event, { videoPath, second, output
 // IPC Handler: Save Base64 Thumbnail Image directly to disk
 ipcMain.handle('video:save-thumbnail-base64', async (_event, { outputPath, base64Data }: { outputPath: string; base64Data: string }) => {
   if (!outputPath || !base64Data) throw new Error('Geçersiz parametre');
-  const dir = path.dirname(outputPath);
+  const targetPath = path.isAbsolute(outputPath) ? outputPath : path.join(app.getPath('userData'), outputPath);
+  const dir = path.dirname(targetPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const rawBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
-  fs.writeFileSync(outputPath, Buffer.from(rawBase64, 'base64'));
-  return { success: true, path: outputPath };
+  fs.writeFileSync(targetPath, Buffer.from(rawBase64, 'base64'));
+  return { success: true, path: targetPath };
 });
 
 // IPC Handler: Probe YouTube video metadata (title, duration)
@@ -1394,13 +1395,27 @@ ipcMain.handle('youtube-auth:get-analytics', async () => {
 
     const data = await googleAuthService.getChannelAnalytics(nextScheduled);
 
-    // Merge uploaded records from local registry for complete tracking
+    // Sync live channel videos: prune deleted videos from local registry & autopilot
     try {
+      if (data.isAuthenticated && Array.isArray(data.videos)) {
+        const liveIds = new Set<string>(data.videos.map((v: any) => v.id).filter(Boolean));
+        if (liveIds.size > 0) {
+          const deletedIds = uploadRegistryService.pruneDeletedYouTubeVideos(liveIds);
+          autopilotService.syncWithLiveChannel(liveIds, deletedIds);
+        }
+      }
+
+      // Merge only very recent uploads (< 10 minutes ago) that YouTube API might still be processing
       const localRecords = uploadRegistryService.getAll();
       if (Array.isArray(localRecords) && localRecords.length > 0) {
         const existingIds = new Set((data.videos || []).map((v: any) => v.id));
-        const extraClips = localRecords
-          .filter((r) => r.youtubeVideoId && !existingIds.has(r.youtubeVideoId))
+        const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+        const recentPendingClips = localRecords
+          .filter((r) => {
+            if (!r.youtubeVideoId || existingIds.has(r.youtubeVideoId)) return false;
+            const upTime = r.uploadedAt ? new Date(r.uploadedAt).getTime() : 0;
+            return !isNaN(upTime) && upTime > tenMinutesAgo;
+          })
           .map((r) => ({
             id: r.youtubeVideoId,
             title: r.title,
@@ -1415,10 +1430,12 @@ ipcMain.handle('youtube-auth:get-analytics', async () => {
             videoUrl: r.youtubeUrl,
           }));
 
-        data.videos = [...(data.videos || []), ...extraClips];
+        data.videos = [...(data.videos || []), ...recentPendingClips];
         data.localUploadsCount = localRecords.length;
       }
-    } catch {}
+    } catch (syncErr: any) {
+      console.warn('[Main] Live channel sync note:', syncErr.message);
+    }
 
     return data;
   } catch (err: any) {

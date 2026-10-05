@@ -1220,14 +1220,14 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
 
                     <div className="p-3 bg-dark-900 border border-dark-800 rounded-xl space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                        Telif & Monetizasyon Kalkanı
+                        Toplam Beğeni & Etkileşim
                       </span>
-                      <span className="text-lg font-black text-emerald-400 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                        %100 Güvenli
+                      <span className="text-lg font-black text-rose-400 flex items-center gap-1.5">
+                        <Flame className="w-4 h-4 text-rose-400" />
+                        {youtubeAnalytics?.totalLikes !== undefined ? youtubeAnalytics.totalLikes.toLocaleString('tr-TR') : '0'} Beğeni
                       </span>
-                      <span className="text-[10px] text-emerald-400 block">
-                        CC-BY 4.0 Transformatif Kurgu
+                      <span className="text-[10px] text-slate-400 block">
+                        {youtubeAnalytics?.totalComments !== undefined ? `${youtubeAnalytics.totalComments} Yorum` : 'Canlı Topluluk Etkileşimi'}
                       </span>
                     </div>
                   </div>
@@ -1303,7 +1303,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                                   </span>
                                 </div>
                                 <span className="text-[10px] text-emerald-400 font-medium block mt-0.5">
-                                  ✓ Shorts Yayında • Telifsiz CC-BY
+                                  ✓ Shorts Yayında • YouTube Canlı
                                 </span>
                               </div>
                             </div>

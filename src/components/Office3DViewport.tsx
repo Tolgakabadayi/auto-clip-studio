@@ -102,7 +102,8 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
       nextScheduled: youtubeAnalytics.nextScheduledUpload
         ? `${youtubeAnalytics.nextScheduledUpload.time || ''} (${youtubeAnalytics.nextScheduledUpload.dayLabel || 'Planlandı'})`
         : undefined,
-      monetizationStatus: 'GÜVENLİ (%100)',
+      totalLikes: youtubeAnalytics.totalLikes,
+      sumOfVideoViews: youtubeAnalytics.sumOfVideoViews,
     });
   }, [youtubeAnalytics]);
 

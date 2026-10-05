@@ -210,4 +210,43 @@ export class UploadRegistryService {
     }
     return false;
   }
+
+  /**
+   * Sync with live YouTube channel videos.
+   * If a video was deleted on YouTube directly by the user, prune it from our records
+   * so it is no longer marked as uploaded, allowing the system/user to re-upload.
+   */
+  public pruneDeletedYouTubeVideos(liveVideoIds: Set<string>): string[] {
+    if (!liveVideoIds || liveVideoIds.size === 0) return [];
+
+    const deletedVideoIds: string[] = [];
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    const initialLen = this.records.length;
+
+    this.records = this.records.filter((r) => {
+      // If it has no youtubeVideoId, keep it
+      if (!r.youtubeVideoId) return true;
+
+      // If it was uploaded within the last 10 minutes, give YouTube time to index it
+      const uploadedTime = r.uploadedAt ? new Date(r.uploadedAt).getTime() : 0;
+      if (!isNaN(uploadedTime) && uploadedTime > tenMinutesAgo) {
+        return true;
+      }
+
+      // If not present in live channel videos, it was deleted on YouTube!
+      if (!liveVideoIds.has(r.youtubeVideoId)) {
+        deletedVideoIds.push(r.youtubeVideoId);
+        console.log(`[UploadRegistryService] Video deleted from YouTube, pruning record: "${r.title}" (${r.youtubeVideoId})`);
+        return false;
+      }
+
+      return true;
+    });
+
+    if (this.records.length !== initialLen) {
+      this.save();
+    }
+
+    return deletedVideoIds;
+  }
 }

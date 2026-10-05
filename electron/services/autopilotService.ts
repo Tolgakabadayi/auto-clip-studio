@@ -147,8 +147,6 @@ export class AutopilotService {
         const record = this.uploadRegistryService.getRecord({
           packageId: pkg.id,
           filePath: pkg.videoPath,
-          sourceVideoId: pkg.sourceVideo?.id,
-          title: pkg.title,
         });
         if (record) {
           pkg.status = 'published';
@@ -156,6 +154,23 @@ export class AutopilotService {
           pkg.youtubeVideoId = record.youtubeVideoId;
           pkg.youtubeUrl = record.youtubeUrl;
           pkg.uploadedAt = record.uploadedAt;
+        }
+      }
+
+      // Auto-heal: Ensure duplicate assignments from previous clipId matching bug are cleared
+      const seenYtIds = new Set<string>();
+      for (const pkg of this.state.packages) {
+        if (pkg.youtubeVideoId) {
+          if (seenYtIds.has(pkg.youtubeVideoId)) {
+            console.log(`[Autopilot:AutoHeal] Resetting duplicate package "${pkg.title}" back to ready status`);
+            pkg.status = 'ready';
+            pkg.isUploaded = false;
+            delete pkg.youtubeVideoId;
+            delete pkg.youtubeUrl;
+            delete pkg.uploadedAt;
+          } else {
+            seenYtIds.add(pkg.youtubeVideoId);
+          }
         }
       }
     }
@@ -250,72 +265,57 @@ export class AutopilotService {
 
     for (const term of searchTerms) {
       try {
-        // Strategy 1: YouTube Search with Sort by View Count (sp=CAMSAhAB) + Creative Commons
-        const viralCCSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(term + ' creative commons')}&sp=CAMSAhAB`;
+        // Strategy 1: Official YouTube CC Filter URL (&sp=EgIwAQ%253D%253D)
+        const ccSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}&sp=EgIwAQ%253D%253D`;
         const args1 = [
-          viralCCSearchUrl,
+          ccSearchUrl,
           '--flat-playlist',
           '--dump-json',
-          '-I', `1:${limit + 15}`,
+          '-I', `1:${limit + 8}`,
           '--no-warnings',
         ];
 
         const rawOutput1 = await this.youtubeService.executeYtDlp(args1);
-        const results1 = this.parseCCSearchResults(rawOutput1, limit);
+        const results1 = await this.parseAndVerifyCCSearchResults(rawOutput1, limit);
         if (results1.length > 0) {
           this.state.candidates = results1;
           this.emitState();
           return results1;
         }
 
-        // Strategy 2: Official YouTube CC Filter URL (&sp=EgQQARgB)
-        const ccSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}&sp=EgQQARgB`;
+        // Strategy 2: Niche query with official CC Filter
+        const ccSearchUrl2 = `https://www.youtube.com/results?search_query=${encodeURIComponent(term + ' podcast')}&sp=EgIwAQ%253D%253D`;
         const args2 = [
-          ccSearchUrl,
+          ccSearchUrl2,
           '--flat-playlist',
           '--dump-json',
-          '-I', `1:${limit + 10}`,
+          '-I', `1:${limit + 8}`,
           '--no-warnings',
         ];
 
         const rawOutput2 = await this.youtubeService.executeYtDlp(args2);
-        const results2 = this.parseCCSearchResults(rawOutput2, limit);
+        const results2 = await this.parseAndVerifyCCSearchResults(rawOutput2, limit);
         if (results2.length > 0) {
           this.state.candidates = results2;
           this.emitState();
           return results2;
-        }
-
-        // Strategy 3: Direct ytsearch query with view count priority
-        const directQuery = `ytsearch${limit + 10}:${term} creative commons`;
-        const directArgs = [
-          directQuery,
-          '--flat-playlist',
-          '--dump-json',
-          '--no-warnings',
-        ];
-        const directOutput = await this.youtubeService.executeYtDlp(directArgs);
-        const directResults = this.parseCCSearchResults(directOutput, limit);
-        if (directResults.length > 0) {
-          this.state.candidates = directResults;
-          this.emitState();
-          return directResults;
         }
       } catch (err) {
         console.warn(`[Autopilot:Search] Search attempt for "${term}" warned:`, err);
       }
     }
 
-    // Strategy 4: Reliable emergency fallback search
+    // Strategy 3: Guaranteed safe Turkish Creative Commons fallback query
     try {
-      const fallbackQuery = `ytsearch12:podcast sohbet creative commons`;
+      const fallbackUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent('podcast sohbet')}&sp=EgIwAQ%253D%253D`;
       const fallbackRaw = await this.youtubeService.executeYtDlp([
-        fallbackQuery,
+        fallbackUrl,
         '--flat-playlist',
         '--dump-json',
+        '-I', `1:10`,
         '--no-warnings',
       ]);
-      const fallbackResults = this.parseCCSearchResults(fallbackRaw, limit);
+      const fallbackResults = await this.parseAndVerifyCCSearchResults(fallbackRaw, limit);
       this.state.candidates = fallbackResults;
       this.emitState();
       return fallbackResults;
@@ -325,16 +325,24 @@ export class AutopilotService {
     }
   }
 
-  private parseCCSearchResults(rawOutput: string, limit: number): CCVideoCandidate[] {
+  private async parseAndVerifyCCSearchResults(rawOutput: string, limit: number): Promise<CCVideoCandidate[]> {
     const candidates: CCVideoCandidate[] = [];
     const lines = rawOutput.split(/\r?\n/).filter(Boolean);
+
+    // Comprehensive blacklist of TV channels, commercial MCNs, and music labels
+    const riskyEntities = [
+      'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
+      'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
+      'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
+      'poll production', 'dmc', 'sony music', 'universal music', 'believe music'
+    ];
 
     for (const line of lines) {
       try {
         const item = JSON.parse(line.trim());
         if (!item.id || !item.title) continue;
 
-        // STRICT DEDUPLICATION: Exclude any video previously processed or uploaded (manually or auto)
+        // STRICT DEDUPLICATION: Exclude any video previously processed or uploaded
         if (
           this.processedVideoIds.has(item.id) ||
           this.uploadRegistryService?.isUploaded({ sourceVideoId: item.id })
@@ -343,7 +351,7 @@ export class AutopilotService {
         }
 
         const duration = Number(item.duration) || 0;
-        // Only skip extremely short clips (< 25s) or monstrously long live archives (> 3 hours)
+        // Skip clips < 25s or extremely long live archives > 3 hours
         if (duration > 0 && (duration < 25 || duration > 10800)) {
           continue;
         }
@@ -351,9 +359,9 @@ export class AutopilotService {
         const channelName = (item.uploader || item.channel || '').toLowerCase();
         const descText = (item.description || '').toLowerCase();
 
-        // 🛡️ COPYRIGHT & MONETIZATION SHIELD: Filter out risky networks & Content ID claims
-        const riskyNetworks = ['vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner bros'];
-        if (riskyNetworks.some((r) => channelName.includes(r))) {
+        // 🛡️ Pre-filter known risky commercial TV & MCN networks
+        if (riskyEntities.some((r) => channelName.includes(r))) {
+          this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${item.title}" ticari medya ağı (${channelName}) nedeniyle güvenlik gereği elendi.`);
           continue;
         }
 
@@ -362,41 +370,79 @@ export class AutopilotService {
           descText.includes('music in this video') ||
           descText.includes('sound recording administered by') ||
           descText.includes('universal music group') ||
-          descText.includes('sony music')
+          descText.includes('sony music') ||
+          descText.includes('wediacorp')
         ) {
+          this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${item.title}" açıklamasında telifli müzik / Content ID kaydı tespit edildi.`);
           continue;
         }
 
-        // Format duration mm:ss or hh:mm:ss
-        const mins = Math.floor(duration / 60);
-        const secs = Math.floor(duration % 60);
-        const hours = Math.floor(mins / 60);
-        const remMins = mins % 60;
-        const durationFormatted =
-          duration > 0
-            ? hours > 0
-              ? `${hours}:${remMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-              : `${mins}:${secs.toString().padStart(2, '0')}`
-            : 'Belirsiz';
+        // 🛡️ DEEP PROBE: Fetch full metadata to strictly verify CC license and zero commercial music
+        const videoUrl = item.url || `https://www.youtube.com/watch?v=${item.id}`;
+        try {
+          const probe = await this.youtubeService.probeVideoFull(videoUrl);
 
-        let thumb = '';
-        if (Array.isArray(item.thumbnails) && item.thumbnails.length > 0) {
-          thumb = item.thumbnails[item.thumbnails.length - 1].url || item.thumbnails[0].url || '';
+          // 1. MUST have genuine Creative Commons license on YouTube
+          if (!probe.isCreativeCommons) {
+            this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${probe.title}" YouTube'da Creative Commons lisansına sahip değil (Lisans: ${probe.license || 'Standart Telifli'}).`);
+            continue;
+          }
+
+          // 2. MUST NOT have registered commercial music tracks (Dexter Britain, etc.)
+          if (probe.hasCommercialMusic) {
+            this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${probe.title}" ticari müzik parçası ("${probe.track || probe.artist}") içerdiği için Content ID ses riskiyle elendi.`);
+            continue;
+          }
+
+          // 3. Probed description safety check
+          const probedDesc = (probe.description || '').toLowerCase();
+          if (
+            probedDesc.includes('provided to youtube by') ||
+            probedDesc.includes('music in this video') ||
+            probedDesc.includes('sound recording administered by') ||
+            probedDesc.includes('universal music group') ||
+            probedDesc.includes('sony music') ||
+            probedDesc.includes('wediacorp')
+          ) {
+            this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${probe.title}" açıklamasında Content ID telif izi bulundu.`);
+            continue;
+          }
+
+          // Format duration mm:ss or hh:mm:ss
+          const effectiveDuration = probe.duration || duration;
+          const mins = Math.floor(effectiveDuration / 60);
+          const secs = Math.floor(effectiveDuration % 60);
+          const hours = Math.floor(mins / 60);
+          const remMins = mins % 60;
+          const durationFormatted =
+            effectiveDuration > 0
+              ? hours > 0
+                ? `${hours}:${remMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+                : `${mins}:${secs.toString().padStart(2, '0')}`
+              : 'Belirsiz';
+
+          candidates.push({
+            id: probe.id || item.id,
+            url: videoUrl,
+            title: probe.title || item.title,
+            duration: effectiveDuration,
+            durationFormatted,
+            channel: probe.channel || item.uploader || 'Bilinmeyen Kanal',
+            viewCount: probe.viewCount || Number(item.view_count) || 0,
+            thumbnailUrl: probe.thumbnailUrl || (Array.isArray(item.thumbnails) && item.thumbnails[0]?.url) || '',
+            license: probe.license || 'Creative Commons Attribution (CC-BY 4.0)',
+            verifiedCC: true,
+            discoveredAt: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+          });
+
+          this.emitLog(`🛡️ [Telif Kalkanı: ONAYLANDI] "${probe.title}" %100 Creative Commons lisansı doğrulandı ve müzik telifsiz olarak güvenceye alındı.`);
+
+          if (candidates.length >= limit) {
+            break;
+          }
+        } catch (probeErr: any) {
+          console.warn(`[Autopilot:Probe] Video probe failed for ${item.id}:`, probeErr.message);
         }
-
-        candidates.push({
-          id: item.id,
-          url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
-          title: item.title,
-          duration,
-          durationFormatted,
-          channel: item.uploader || item.channel || 'Bilinmeyen Kanal',
-          viewCount: Number(item.view_count) || 0,
-          thumbnailUrl: thumb,
-          license: 'Creative Commons Attribution (CC-BY)',
-          verifiedCC: true,
-          discoveredAt: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-        });
       } catch (e) {
         // ignore parse error
       }
@@ -404,12 +450,6 @@ export class AutopilotService {
 
     // STRICT VIRALITY SORT: Always order candidates by view count descending
     candidates.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-
-    // Prioritize videos with significant view counts if available
-    const highView = candidates.filter((c) => (c.viewCount || 0) >= 1000);
-    if (highView.length >= limit) {
-      return highView.slice(0, limit);
-    }
 
     return candidates.slice(0, limit);
   }
@@ -1190,7 +1230,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
   /**
    * Uploads a scheduled package directly to YouTube Shorts with thumbnail and tags
    */
-  public async publishPackageToYouTube(pkg: ScheduledClipPackage): Promise<void> {
+  public async publishPackageToYouTube(pkg: ScheduledClipPackage, options?: { force?: boolean }): Promise<void> {
     if (!this.googleAuthService) {
       throw new Error('GoogleAuthService mevcut değil.');
     }
@@ -1199,21 +1239,23 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
       throw new Error(`Video dosyası bulunamadı: ${pkg.videoPath}`);
     }
 
-    // Prevent duplicate upload if already uploaded
-    if (
-      (pkg.isUploaded && pkg.youtubeVideoId) ||
-      this.uploadRegistryService?.isUploaded({
-        packageId: pkg.id,
-        filePath: pkg.videoPath,
-        youtubeVideoId: pkg.youtubeVideoId,
-      })
-    ) {
-      this.emitLog(`[Otopilot] "${pkg.title}" daha önce yüklenmiş olduğu için mükerrer yükleme durduruldu.`);
-      pkg.status = 'published';
-      pkg.isUploaded = true;
-      this.savePersistence();
-      this.emitState();
-      return;
+    // Prevent duplicate upload if already uploaded (unless user explicitly forced upload via "Şimdi Yayınla")
+    if (!options?.force) {
+      if (
+        (pkg.isUploaded && pkg.youtubeVideoId) ||
+        this.uploadRegistryService?.isUploaded({
+          packageId: pkg.id,
+          filePath: pkg.videoPath,
+          youtubeVideoId: pkg.youtubeVideoId,
+        })
+      ) {
+        this.emitLog(`[Otopilot] "${pkg.title}" daha önce yüklenmiş olduğu için mükerrer yükleme durduruldu.`);
+        pkg.status = 'published';
+        pkg.isUploaded = true;
+        this.savePersistence();
+        this.emitState();
+        return;
+      }
     }
 
     pkg.status = 'publishing';
@@ -1221,7 +1263,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     this.savePersistence();
     this.emitState();
 
-    this.emitLog(`🚀 [Otopilot:Yayın] Altın yayın saati geldi (${pkg.slotTime})! YouTube Shorts'a yükleniyor: "${pkg.title}"`);
+    this.emitLog(`🚀 [Otopilot:Yayın] YouTube Shorts'a yükleme başlatıldı: "${pkg.title}"`);
 
     try {
       const uploadPayload = {
@@ -1297,7 +1339,8 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     if (!pkg) {
       throw new Error(`Paket bulunamadı: ${packageId}`);
     }
-    await this.publishPackageToYouTube(pkg);
+    // Force upload: even if pkg was previously tagged as published by bug, perform real YouTube upload!
+    await this.publishPackageToYouTube(pkg, { force: true });
     return true;
   }
 
@@ -1309,13 +1352,11 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
       this.processedVideoIds.add(record.sourceVideoId);
     }
 
-    // Match and update any corresponding package
+    // Match and update ONLY exact packageId or identical video file path (NEVER clipId!)
     for (const pkg of this.state.packages) {
       const match =
         (record.packageId && pkg.id === record.packageId) ||
-        (record.filePath && path.resolve(pkg.videoPath) === path.resolve(record.filePath)) ||
-        (record.clipId !== undefined && pkg.clipId === record.clipId) ||
-        (record.title && pkg.title.trim().toLowerCase() === record.title.trim().toLowerCase());
+        (record.filePath && pkg.videoPath && path.resolve(pkg.videoPath) === path.resolve(record.filePath));
 
       if (match) {
         pkg.status = 'published';
@@ -1328,6 +1369,51 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
 
     this.savePersistence();
     this.emitState();
+  }
+
+  /**
+   * Synchronize package states with live YouTube channel.
+   * If a package is marked as published with a video ID that was deleted on YouTube,
+   * reset the package back to 'ready' status so the user can re-upload or edit it!
+   */
+  public syncWithLiveChannel(liveVideoIds: Set<string>, deletedVideoIds?: string[]): void {
+    if (!liveVideoIds || liveVideoIds.size === 0) return;
+
+    let changed = false;
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    const seenVideoIds = new Set<string>();
+
+    for (const pkg of this.state.packages) {
+      if (pkg.isUploaded && pkg.youtubeVideoId) {
+        const uploadedTime = pkg.uploadedAt ? new Date(pkg.uploadedAt).getTime() : 0;
+        const isRecent = !isNaN(uploadedTime) && uploadedTime > tenMinutesAgo;
+
+        const isDuplicate = seenVideoIds.has(pkg.youtubeVideoId);
+        const isDeletedOnYouTube = !isRecent && !liveVideoIds.has(pkg.youtubeVideoId);
+        const isExplicitlyDeleted = deletedVideoIds && deletedVideoIds.includes(pkg.youtubeVideoId);
+
+        if (isDuplicate || isDeletedOnYouTube || isExplicitlyDeleted) {
+          this.emitLog(`[Otopilot:Sync] "${pkg.title}" YouTube'dan silindiği veya mükerrer eşleştiği için hazır ('ready') durumuna geri alındı.`);
+          pkg.status = 'ready';
+          pkg.isUploaded = false;
+          delete pkg.youtubeVideoId;
+          delete pkg.youtubeUrl;
+          delete pkg.uploadedAt;
+          changed = true;
+        } else {
+          seenVideoIds.add(pkg.youtubeVideoId);
+        }
+      } else if (pkg.status === 'published' && !pkg.youtubeVideoId) {
+        pkg.status = 'ready';
+        pkg.isUploaded = false;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.savePersistence();
+      this.emitState();
+    }
   }
 
   /**

@@ -151,7 +151,86 @@ export class YouTubeService {
   /**
    * Fast probe to retrieve video title and info without downloading
    */
-  public async probeVideo(url: string): Promise<{ title: string; duration?: number }> {
+  public async probeVideo(url: string): Promise<{ title: string; duration?: number; license?: string; isCreativeCommons?: boolean; warning?: string }> {
+    try {
+      const full = await this.probeVideoFull(url);
+      return {
+        title: full.title,
+        duration: full.duration,
+        license: full.license,
+        isCreativeCommons: full.isCreativeCommons,
+        warning: full.copyrightWarning,
+      };
+    } catch {
+      // Fallback to light probe if full probe fails
+      return new Promise((resolve, reject) => {
+        if (!YouTubeService.isValidYouTubeUrl(url)) {
+          return reject(new Error('Geçersiz YouTube URL adresi.'));
+        }
+
+        const args = [
+          ...this.baseArgs,
+          '--force-ipv4',
+          '--socket-timeout', '10',
+          '--extractor-args', 'youtube:player_client=android,web;player_skip=webpage,configs',
+          '--compat-options', 'no-youtube-channel-redirect',
+          '--no-playlist',
+          '--no-warnings',
+          '--print', '%(title)s',
+          '--print', '%(duration)s',
+          url.trim(),
+        ];
+
+        const child = spawn(this.command, args, { windowsHide: true });
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+
+        child.stderr.on('data', (d) => {
+          stderr += d.toString();
+        });
+
+        child.on('close', (code) => {
+          if (code === 0 && stdout.trim()) {
+            const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+            const title = lines[0] || 'YouTube Video';
+            const duration = lines[1] ? parseFloat(lines[1]) : 0;
+            resolve({ title, duration });
+          } else {
+            reject(new Error(`YouTube video bilgisi alınamadı (kod ${code}): ${stderr || stdout}`));
+          }
+        });
+
+        child.on('error', (err) => {
+          reject(new Error(`yt-dlp çalıştırılamadı: ${err.message}`));
+        });
+      });
+    }
+  }
+
+  /**
+   * Deep metadata probe to verify license, commercial music, channel, and copyright status
+   */
+  public async probeVideoFull(url: string): Promise<{
+    id: string;
+    title: string;
+    duration: number;
+    license?: string;
+    isCreativeCommons: boolean;
+    channel?: string;
+    uploader?: string;
+    track?: string;
+    artist?: string;
+    album?: string;
+    hasCommercialMusic: boolean;
+    viewCount?: number;
+    description?: string;
+    thumbnailUrl?: string;
+    copyrightWarning?: string;
+  }> {
     return new Promise((resolve, reject) => {
       if (!YouTubeService.isValidYouTubeUrl(url)) {
         return reject(new Error('Geçersiz YouTube URL adresi.'));
@@ -159,14 +238,14 @@ export class YouTubeService {
 
       const args = [
         ...this.baseArgs,
-        '--force-ipv4', // Instant DNS resolution, bypasses Windows IPv6 timeout bug
-        '--socket-timeout', '10',
-        '--extractor-args', 'youtube:player_client=android,web;player_skip=webpage,configs', // Bypasses slow JS signature runtime search
+        '--force-ipv4',
+        '--socket-timeout', '12',
+        '--extractor-args', 'youtube:player_client=android,web;player_skip=webpage,configs',
         '--compat-options', 'no-youtube-channel-redirect',
         '--no-playlist',
+        '--dump-json',
+        '--skip-download',
         '--no-warnings',
-        '--print', '%(title)s',
-        '--print', '%(duration)s',
         url.trim(),
       ];
 
@@ -184,10 +263,51 @@ export class YouTubeService {
 
       child.on('close', (code) => {
         if (code === 0 && stdout.trim()) {
-          const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
-          const title = lines[0] || 'YouTube Video';
-          const duration = lines[1] ? parseFloat(lines[1]) : 0;
-          resolve({ title, duration });
+          try {
+            const data = JSON.parse(stdout.trim());
+            const license = data.license || '';
+            const isCC = Boolean(
+              license &&
+              (license.toLowerCase().includes('creative commons') ||
+               license.toLowerCase().includes('reuse allowed'))
+            );
+            const track = data.track || undefined;
+            const artist = data.artist || undefined;
+            const album = data.album || undefined;
+            const hasCommercialMusic = Boolean(track || artist || album);
+
+            let copyrightWarning: string | undefined;
+            if (!isCC) {
+              copyrightWarning = `Video Creative Commons lisanslı değildir (Lisans: ${license || 'Standart YouTube Lisansı'}). Bu video telif hakkı ihtarına veya gelir kaybına yol açabilir!`;
+            } else if (hasCommercialMusic) {
+              copyrightWarning = `Video CC lisanslı olsa da ticari müzik ("${track || artist}") içermektedir. Content ID ses hak talebine neden olabilir!`;
+            }
+
+            let thumb = '';
+            if (Array.isArray(data.thumbnails) && data.thumbnails.length > 0) {
+              thumb = data.thumbnails[data.thumbnails.length - 1]?.url || data.thumbnails[0]?.url || '';
+            }
+
+            resolve({
+              id: data.id,
+              title: data.title || 'YouTube Video',
+              duration: data.duration || 0,
+              license: license || undefined,
+              isCreativeCommons: isCC,
+              channel: data.uploader || data.channel,
+              uploader: data.uploader,
+              track,
+              artist,
+              album,
+              hasCommercialMusic,
+              viewCount: data.view_count || 0,
+              description: data.description || '',
+              thumbnailUrl: thumb,
+              copyrightWarning,
+            });
+          } catch (e: any) {
+            reject(new Error(`YouTube video meta verisi okunamadı: ${e.message}`));
+          }
         } else {
           reject(new Error(`YouTube video bilgisi alınamadı (kod ${code}): ${stderr || stdout}`));
         }

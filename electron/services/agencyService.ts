@@ -812,7 +812,7 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
       "Aciliyet Açısı: Sakın Bu Hatayı Yapmayın?",
       "Şok İtiraf Açısı: Herkes Yanılıyor!"
     ],
-    "description": "🔥 Vurucu ilk cümle! Videoda konuşmacının aktardığı derin detaylar burada özetlenir. İzleyicinin hayata geçirebileceği kilit tavsiye.\\n\\n📌 Kaynak: Creative Commons CC-BY 4.0 lisansı kapsamında türev kurgulanmıştır.",
+    "description": "🔥 Vurucu ilk cümle! Videoda konuşmacının aktardığı derin detaylar burada özetlenir. İzleyicinin hayata geçirebileceği kilit tavsiye.\\n\\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)\\n\\n📌 Kaynak: Creative Commons CC-BY 4.0 lisansı kapsamında türev kurgulanmıştır.",
     "hashtags": ["#shorts", "#keşfet", "#viral", "#trend", "#podcast", "#başarı", "#motivasyon", "#girişimcilik", "#farkındalık", "#tavsiye", "#psikoloji", "#reels"],
     "callToAction": "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım! 👇"
   }
@@ -829,9 +829,14 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
         // SET THE NEW PUNCHY TITLE AS THE OFFICIAL CLIP TITLE!
         clip.title = finalTitles[0];
 
+        let desc = found?.description || `${clip.hook_sentence} | Devamı ve fazlası için takip edin!`;
+        if (!desc.includes('https://github.com/Tolgakabadayi/auto-clip-studio')) {
+          desc += `\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)`;
+        }
+
         clip.socialMetadata = {
           titles: finalTitles,
-          description: found?.description || `${clip.hook_sentence} | Devamı ve fazlası için takip edin!`,
+          description: desc,
           hashtags: Array.isArray(found?.hashtags) && found.hashtags.length > 0 ? found.hashtags : ['#viral', '#shorts', '#kesit', '#fyp', '#keşfet'],
           callToAction: found?.callToAction || 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇',
         };
@@ -842,7 +847,7 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
         clip.title = fallbackTitles[0];
         clip.socialMetadata = {
           titles: fallbackTitles,
-          description: `${clip.hook_sentence} | Tamamı için profili takip edin!`,
+          description: `${clip.hook_sentence}\n\n⚡ Bu video AutoClip AI ile saniyeler içinde otonom olarak üretilmiştir.\n🚀 Proje & Kaynak Kod: https://github.com/Tolgakabadayi/auto-clip-studio (Reklam / Açık Kaynak Projemiz)`,
           hashtags: ['#viral', '#fyp', '#reels', '#shorts', '#tiktok'],
           callToAction: 'Siz ne düşünüyorsunuz? Yorumlarda buluşalım 👇',
         };

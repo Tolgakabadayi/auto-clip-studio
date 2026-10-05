@@ -9,6 +9,9 @@ import {
   AgencyMessage,
   AgencyProgressEvent,
   CuratedPitchCandidate,
+  BrandSafetyConfig,
+  DEFAULT_BRAND_SAFETY_CONFIG,
+  compileActiveBrandSafetyBlacklist,
 } from '../../src/types';
 import { FFmpegService } from './ffmpegService';
 import { YouTubeService } from './youtubeService';
@@ -122,47 +125,21 @@ export class AgencyService {
   private defaultHost = 'http://localhost:11434';
   private seenMeetingCandidateIds: Set<string> = new Set();
   private seenMeetingChannels: Set<string> = new Set();
+  private brandSafetyConfig: BrandSafetyConfig = { ...DEFAULT_BRAND_SAFETY_CONFIG };
 
-  private static BRAND_SAFETY_BLACKLIST = [
-    // Political parties, political figures, elections & propaganda
-    'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'iyip', 'zafer partisi',
-    'erdoğan', 'erdogan', 'recep tayyip', 'özgür özel', 'kılıçdaroğlu', 'mansur yavaş', 'ekrem imamoğlu',
-    'devlet bahçeli', 'selahattin demirtaş', 'siyaset', 'siyasi', 'seçim', 'milletvekili', 'meclis',
-    'tbmm', 'belediye başkanı', 'propaganda', 'hükümet', 'muhalefet', 'koalisyon', 'bakanlık',
+  public setBrandSafetyConfig(cfg: BrandSafetyConfig): void {
+    this.brandSafetyConfig = { ...DEFAULT_BRAND_SAFETY_CONFIG, ...cfg };
+  }
 
-    // Terrorism, militant organizations, separatist / ethnic propaganda
-    'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
-    'gerilla', 'öcalan', 'ocalan', 'kandil', 'halkların demokratik', 'kürt hareketi', 'bölücü',
-    'kürt', 'kurt', 'kürdistan', 'kurdistan', 'peşmerge', 'pesmerge', 'rojava',
-
-    // +18, Adult, NSFW, vulgar content
-    '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak', 'mastürbasyon',
-    'escort', 'jigolo', 'lezbiyen', 'gay', 'fahişe', 'aldatma itirafı +18',
-
-    // Violence, gore, brutality, severe crimes
-    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence',
-
-    // School, exam prep & academic lectures (Permanently exclude Tonguç Akademi and course lectures)
-    'tonguç', 'tonguc', 'tonguç akademi', 'tonguc akademi', 'hocalara geldik', 'benim hocam',
-    'rehber matematik', 'rüştü hoca', 'mert hoca', 'şeref hoca', 'dershane', 'lgs', 'yks', 'kpss',
-    'öabt', 'ayt', 'tyt', 'soru çözümü', 'konu anlatımı', 'sınav hazırlık', 'ders notları',
-    'yazılıya hazırlık', 'eğitimhane', 'meb', 'okul dersi', 'sınav taktikleri'
-  ];
-
-  private static RISKY_ENTITIES = [
-    'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
-    'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
-    'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
-    'poll production', 'dmc', 'sony music', 'universal music', 'believe music',
-    // School, curriculum & exam prep channels (block Tonguç Akademi, etc.)
-    'tonguç', 'tonguc', 'dershane', 'lgs', 'yks', 'kpss', 'öabt', 'akademi', 'hocalara', 'benim hocam',
-    'rehber matematik', 'rüştü hoca', 'mert hoca', 'soru çözümü', 'konu anlatımı'
-  ];
+  public getBrandSafetyConfig(): BrandSafetyConfig {
+    return { ...this.brandSafetyConfig };
+  }
 
   public checkBrandSafety(text: string): { safe: boolean; reason?: string } {
     if (!text) return { safe: true };
     const lower = text.toLowerCase();
-    for (const banned of AgencyService.BRAND_SAFETY_BLACKLIST) {
+    const activeBlacklist = compileActiveBrandSafetyBlacklist(this.brandSafetyConfig);
+    for (const banned of activeBlacklist) {
       const regex = new RegExp(`(^|[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ])${banned}([^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]|$)`, 'i');
       if (regex.test(lower) || lower.includes(banned)) {
         return { safe: false, reason: banned };
@@ -1627,13 +1604,17 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
       'derin sohbet podcast hayat tecrübesi',
     ];
 
+    const activeForbidden = compileActiveBrandSafetyBlacklist(this.brandSafetyConfig);
+    const forbiddenSummary = activeForbidden.slice(0, 30).join(', ');
+
     try {
       const prompt = `Sen uzman bir Sosyal Medya Trend Avcısısın.
 Hedef Niş / Kategori: "${niche}"
 ${customKeyword ? `Özel Arama Terimi: "${customKeyword}"` : ''}
 
 GÖREV: YouTube üzerinde Creative Commons (CC-BY) lisanslı, yüksek izlenme potansiyeline sahip, özellikle GERÇEK HAYAT HİKAYELERİ, SAMİMİ RÖPORTAJLAR, İTİRAFLAR, İLHAM VERİCİ YAŞAM DERSLERİ ve DERİN PODCAST SOHBETLERİ içeren videoları bulmak için 3 adet vurucu arama sorgusu üret.
-KESİNLİKLE YASAK: Okul dersleri, Tonguç Akademi, sınavlar (LGS, YKS, KPSS), soru çözümleri, siyasi partiler, terörizm veya +18 içerikler KESİNLİKLE ÜRETİLEMEZ.
+KANAL GÜVENLİĞİ VE YASAKLI FİLTRELER: Kullanıcının Kanal Güvenliği paneli gereği şu kavramlar, kanallar ve temalar KESİNLİKLE elenmeli ve arama sorgusu olarak ÜRETİLMEMELİDİR:
+${forbiddenSummary}
 Sorgular doğrudan YouTube arama çubuğuna yazılacak şekilde Türkçe olsun (Örn: "gerçek hayat hikayesi röportaj", "yaşam mücadelesi podcast", "sokak röportajı hayat dersi").
 
 SADECE JSON FORMATINDA DİZİ VER:
@@ -2038,13 +2019,7 @@ SADECE JSON FORMATINDA DİZİ VER:
                 continue;
               }
 
-              // 3. Risky entities / School / Test prep blacklist (No Tonguç Akademi, exam lectures, etc.)
-              const isRisky = AgencyService.RISKY_ENTITIES.some((r) => channelName.includes(r) || titleLower.includes(r));
-              if (isRisky) {
-                continue;
-              }
-
-              // 4. Brand Safety: Zero political polemics, terrorism, ethnic conflict, or +18 vulgarity
+              // 3. Brand Safety & Channel Shield: Zero political polemics, terrorism, ethnic conflict, school lectures or +18 vulgarity
               const safety = this.checkBrandSafety(`${item.title} ${channelName} ${descLower}`);
               if (!safety.safe) {
                 continue;

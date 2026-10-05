@@ -31,7 +31,12 @@ import {
   MessageSquare,
   TrendingUp,
   Calendar,
-  Loader2
+  Loader2,
+  ShieldCheck,
+  ShieldAlert,
+  Plus,
+  Trash2,
+  Ban
 } from 'lucide-react';
 import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import {
@@ -43,7 +48,11 @@ import {
   AgencyRole,
   YouTubeAuthStatus,
   YouTubeAnalyticsData,
-  YouTubeVideoStat
+  YouTubeVideoStat,
+  BrandSafetyConfig,
+  DEFAULT_BRAND_SAFETY_CONFIG,
+  BRAND_SAFETY_DICTIONARIES,
+  compileActiveBrandSafetyBlacklist
 } from '../types';
 import { INITIAL_OFFICE_AGENTS, AgentOfficeNode } from './AgencyRoomModal';
 import { novaVoice } from '../utils/novaVoice';
@@ -88,7 +97,7 @@ interface SettingsModalProps {
   autopilotState: AutopilotState | null;
 }
 
-type TabType = 'ai' | 'office' | 'video' | 'docker' | 'autopilot' | 'youtube';
+type TabType = 'ai' | 'office' | 'video' | 'docker' | 'autopilot' | 'youtube' | 'safety';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -160,6 +169,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [apSettings, setApSettings] = useState<any>(null);
   const [minViewThreshold, setMinViewThreshold] = useState<number>(300000);
 
+  // Brand Safety & Content Filter State
+  const [brandSafety, setBrandSafety] = useState<BrandSafetyConfig>(DEFAULT_BRAND_SAFETY_CONFIG);
+  const [customWordInput, setCustomWordInput] = useState<string>('');
+
   useEffect(() => {
     if (isOpen && window.electronAPI?.autopilotGetSettings) {
       window.electronAPI.autopilotGetSettings().then((s: any) => {
@@ -167,6 +180,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           setApSettings(s);
           if (typeof s.minViewCount === 'number') {
             setMinViewThreshold(s.minViewCount);
+          }
+          if (s.brandSafetyConfig) {
+            setBrandSafety({
+              ...DEFAULT_BRAND_SAFETY_CONFIG,
+              ...s.brandSafetyConfig,
+              customBlacklistWords: Array.isArray(s.brandSafetyConfig.customBlacklistWords)
+                ? s.brandSafetyConfig.customBlacklistWords
+                : []
+            });
           }
         }
       }).catch(console.error);
@@ -183,6 +205,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setTimeout(() => setShowSaveToast(false), 2000);
       } catch (err) {
         console.error('Failed to update min view count:', err);
+      }
+    }
+  };
+
+  const handleToggleSafetyFlag = async (key: keyof Omit<BrandSafetyConfig, 'customBlacklistWords'>) => {
+    const updated: BrandSafetyConfig = {
+      ...brandSafety,
+      [key]: !brandSafety[key]
+    };
+    setBrandSafety(updated);
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      try {
+        await window.electronAPI.autopilotUpdateSettings({ brandSafetyConfig: updated });
+        setShowSaveToast(true);
+        setTimeout(() => setShowSaveToast(false), 1500);
+      } catch (err) {
+        console.error('Failed to toggle brand safety rule:', err);
+      }
+    }
+  };
+
+  const handleAddCustomWord = async () => {
+    const trimmed = customWordInput.trim().toLowerCase();
+    if (!trimmed) return;
+    if (brandSafety.customBlacklistWords.includes(trimmed)) {
+      setCustomWordInput('');
+      return;
+    }
+    const updated: BrandSafetyConfig = {
+      ...brandSafety,
+      customBlacklistWords: [...brandSafety.customBlacklistWords, trimmed]
+    };
+    setBrandSafety(updated);
+    setCustomWordInput('');
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      try {
+        await window.electronAPI.autopilotUpdateSettings({ brandSafetyConfig: updated });
+        setShowSaveToast(true);
+        setTimeout(() => setShowSaveToast(false), 1500);
+      } catch (err) {
+        console.error('Failed to add custom blacklist word:', err);
+      }
+    }
+  };
+
+  const handleRemoveCustomWord = async (word: string) => {
+    const updated: BrandSafetyConfig = {
+      ...brandSafety,
+      customBlacklistWords: brandSafety.customBlacklistWords.filter((w) => w !== word)
+    };
+    setBrandSafety(updated);
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      try {
+        await window.electronAPI.autopilotUpdateSettings({ brandSafetyConfig: updated });
+      } catch (err) {
+        console.error('Failed to remove custom blacklist word:', err);
       }
     }
   };
@@ -541,6 +619,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       console.error('Ayarlar kaydedilirken hata:', e);
     }
 
+    if (window.electronAPI?.autopilotUpdateSettings) {
+      window.electronAPI.autopilotUpdateSettings({ brandSafetyConfig: brandSafety }).catch(console.error);
+    }
+
     setShowSaveToast(true);
     setTimeout(() => {
       setShowSaveToast(false);
@@ -639,6 +721,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Zap className="w-4 h-4 text-emerald-400" />
             <span>🚀 7/24 Otopilot</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('safety')}
+            className={`flex items-center space-x-2 px-4 py-2.5 border-b-2 font-bold text-xs transition-all ${
+              activeTab === 'safety'
+                ? 'border-indigo-400 text-white bg-indigo-400/10 rounded-t-xl'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-indigo-400" />
+            <span>🛡️ Kanal Güvenliği & Kelime Filtresi</span>
           </button>
 
           <button
@@ -1968,6 +2062,430 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 7: KANAL GÜVENLİĞİ & KELİME FİLTRESİ                   */}
+          {/* ======================================================== */}
+          {activeTab === 'safety' && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Header Banner */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-dark-900 border border-indigo-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0 shadow-lg shadow-indigo-500/10">
+                      <ShieldCheck className="w-5 h-5 text-indigo-300" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>🛡️ Kanal & Marka Güvenliği Kalkanı (Brand Safety AI Engine)</span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-semibold">
+                          Tüm Ajanlarda Aktif
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Hunter Gemma, Radar Scout, Sentinel Guard, Cliffhanger ve Otopilot gibi tüm zeka modellerinin arama, keşif ve filtreleme kararlarını dinamik olarak denetler.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
+                  <div className="p-3 rounded-xl bg-dark-900/80 border border-dark-750 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Aktif Kategori Koruması</span>
+                      <strong className="text-white text-xs font-bold mt-0.5 block">
+                        {[
+                          brandSafety.blockPolitical,
+                          brandSafety.blockTerrorAndSeparatist,
+                          brandSafety.blockAdultAndNSFW,
+                          brandSafety.blockViolenceAndGore,
+                          brandSafety.blockSchoolAndLectures,
+                          brandSafety.blockCommercialMCNs
+                        ].filter(Boolean).length} / 6 Kategori Korumada
+                      </strong>
+                    </div>
+                    <ShieldAlert className="w-5 h-5 text-amber-400 opacity-80" />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-dark-900/80 border border-dark-750 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Toplam Engelli Terim / Kanal</span>
+                      <strong className="text-indigo-400 text-xs font-bold mt-0.5 block">
+                        {compileActiveBrandSafetyBlacklist(brandSafety).length} Yasaklı Kelime & MCN
+                      </strong>
+                    </div>
+                    <Ban className="w-5 h-5 text-indigo-400 opacity-80" />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-dark-900/80 border border-dark-750 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Özel Tanımlı Kurallar</span>
+                      <strong className="text-cyan-400 text-xs font-bold mt-0.5 block">
+                        {brandSafety.customBlacklistWords.length} Özel Kelime / Kanal
+                      </strong>
+                    </div>
+                    <Plus className="w-5 h-5 text-cyan-400 opacity-80" />
+                  </div>
+                </div>
+              </div>
+
+              {/* 6 Category Toggle Cards Grid */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-400" />
+                    <span>Dinamik Güvenlik Kategorileri</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-400">
+                    Modeller bu kategorilerdeki videoları kesinlikle seçmez ve aramalardan dışlar.
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {/* Category 1: Political */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockPolitical
+                      ? 'bg-dark-900 border-indigo-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🏛️</span>
+                          <h5 className="text-xs font-bold text-white">Siyasi Propaganda & Parti Siyaseti</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockPolitical
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockPolitical ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Siyasi partiler, liderler, hükümet/muhalefet tartışmaları, TBMM konuşmaları ve seçim propagandaları.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.political.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockPolitical')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockPolitical ? 'bg-indigo-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockPolitical ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category 2: Terror & Separatist */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockTerrorAndSeparatist
+                      ? 'bg-dark-900 border-rose-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🚫</span>
+                          <h5 className="text-xs font-bold text-white">Terörizm, Bölücü & Etnik Ayrılıkçılık</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockTerrorAndSeparatist
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockTerrorAndSeparatist ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Terör örgütleri, bölücü semboller, etnik çatışma, silahlı gruplar ve yasaklı propaganda içerikleri.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.terror_separatist.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockTerrorAndSeparatist')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockTerrorAndSeparatist ? 'bg-rose-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockTerrorAndSeparatist ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category 3: +18 & NSFW */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockAdultAndNSFW
+                      ? 'bg-dark-900 border-purple-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🔞</span>
+                          <h5 className="text-xs font-bold text-white">+18, Yetişkin & Müstehcen İçerik</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockAdultAndNSFW
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockAdultAndNSFW ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Müstehcenlik, erotik kelimeler, +18 itiraf hikayeleri ve cinsellik odaklı içerikler.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.adult_nsfw.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockAdultAndNSFW')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockAdultAndNSFW ? 'bg-purple-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockAdultAndNSFW ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category 4: Violence & Gore */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockViolenceAndGore
+                      ? 'bg-dark-900 border-red-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">🩸</span>
+                          <h5 className="text-xs font-bold text-white">Şiddet, Vahşet & Cinayet Olayları</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockViolenceAndGore
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockViolenceAndGore ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Kanlı olaylar, cinayet anları, katliam, infaz, intihar ve rahatsız edici vahşet sahneleri.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.violence_gore.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockViolenceAndGore')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockViolenceAndGore ? 'bg-red-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockViolenceAndGore ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category 5: School & Lectures */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockSchoolAndLectures
+                      ? 'bg-dark-900 border-amber-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">📚</span>
+                          <h5 className="text-xs font-bold text-white">Okul Dersleri & Sınav Anlatımları</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockSchoolAndLectures
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockSchoolAndLectures ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Tonguç Akademi, Hocalara Geldik, TYT/AYT/LGS/KPSS konu anlatımları ve okul ders tekrarları.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.school_lectures.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockSchoolAndLectures')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockSchoolAndLectures ? 'bg-amber-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockSchoolAndLectures ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category 6: Commercial MCNs */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    brandSafety.blockCommercialMCNs
+                      ? 'bg-dark-900 border-cyan-500/40 shadow-sm'
+                      : 'bg-dark-900/40 border-dark-800 opacity-60'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">📺</span>
+                          <h5 className="text-xs font-bold text-white">Büyük MCN'ler & Telifli TV Ağları</h5>
+                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                            brandSafety.blockCommercialMCNs
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>
+                            {brandSafety.blockCommercialMCNs ? 'Engelleniyor' : 'Pasif'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                          Netd, GAİN, Vevo, Disney, Netflix, ana akım TV kanalları, dizi yapım şirketleri ve telifli müzik etiketleri.
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-2.5">
+                          {BRAND_SAFETY_DICTIONARIES.commercial_mcns.slice(0, 6).map((kw) => (
+                            <span key={kw} className="text-[10px] bg-dark-800 text-slate-400 px-1.5 py-0.5 rounded border border-dark-700 font-mono">
+                              {kw}
+                            </span>
+                          ))}
+                          <span className="text-[10px] text-slate-400 px-1 py-0.5">+ daha fazlası</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSafetyFlag('blockCommercialMCNs')}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                          brandSafety.blockCommercialMCNs ? 'bg-cyan-600' : 'bg-dark-750'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          brandSafety.blockCommercialMCNs ? 'translate-x-6' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Blacklist Words Section */}
+              <div className="p-5 rounded-2xl bg-dark-900 border border-dark-750 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      <Ban className="w-4 h-4 text-rose-400" />
+                      <span>Özel Yasaklı Kelime & Kanal Havuzu</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Kanalınızda kesinlikle yer almasını istemediğiniz ek kelimeleri, kişi veya kanal isimlerini ekleyin. Modeller arama yaparken bu kelimeleri içeren hiçbir içeriği getirmeyecektir.
+                    </p>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400 bg-dark-800 px-2 py-0.5 rounded border border-dark-700">
+                    {brandSafety.customBlacklistWords.length} Özel Kelime
+                  </span>
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={customWordInput}
+                      onChange={(e) => setCustomWordInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomWord();
+                        }
+                      }}
+                      placeholder="Örn: astroloji, fal, magazin, dedikodu, kanal adı..."
+                      className="w-full bg-dark-850 border border-dark-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddCustomWord}
+                    disabled={!customWordInput.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/20 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Yasaklı Kelime Ekle</span>
+                  </button>
+                </div>
+
+                {brandSafety.customBlacklistWords && brandSafety.customBlacklistWords.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
+                    {brandSafety.customBlacklistWords.map((word) => (
+                      <span
+                        key={word}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono transition-all hover:bg-rose-500/20"
+                      >
+                        <Ban className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span>{word}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomWord(word)}
+                          className="hover:text-white p-0.5 rounded hover:bg-rose-500/30 transition-colors ml-0.5"
+                          title="Bu kelimeyi yasaklı listeden kaldır"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-400 hover:text-white" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-4 text-center rounded-xl bg-dark-850/50 border border-dark-800 text-xs text-slate-500 italic">
+                    Henüz özel yasaklı kelime eklenmedi. Tüm arama ajanları yukarıdaki 6 ana kategori kurallarına göre çalışmaktadır.
+                  </div>
+                )}
               </div>
             </div>
           )}

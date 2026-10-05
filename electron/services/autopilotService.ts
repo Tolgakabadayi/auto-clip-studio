@@ -11,6 +11,9 @@ import {
   AgencyMessage,
   AgencyProgressEvent,
   UploadRecord,
+  BrandSafetyConfig,
+  DEFAULT_BRAND_SAFETY_CONFIG,
+  compileActiveBrandSafetyBlacklist,
 } from '../../src/types';
 import { YouTubeService } from './youtubeService';
 import { WhisperService } from './whisperService';
@@ -122,6 +125,7 @@ export class AutopilotService {
       seriesOverlayBanner: true,
       minSourceDurationSeconds: 60,
       minViewCount: 100000,
+      brandSafetyConfig: { ...DEFAULT_BRAND_SAFETY_CONFIG },
     };
 
     // Initial state
@@ -138,15 +142,19 @@ export class AutopilotService {
     };
 
     this.loadPersistence();
+    if (this.settings.brandSafetyConfig) {
+      this.agencyService.setBrandSafetyConfig(this.settings.brandSafetyConfig);
+    }
   }
 
   /**
-   * Check text against brand safety blacklist (siyasi / terör / +18 / şiddet)
+   * Check text against dynamic brand safety blacklist (siyasi / terör / +18 / şiddet / okul / özel)
    */
   public checkBrandSafety(text: string): { safe: boolean; reason?: string } {
     if (!text) return { safe: true };
     const lower = text.toLowerCase();
-    for (const banned of AutopilotService.BRAND_SAFETY_BLACKLIST) {
+    const activeList = compileActiveBrandSafetyBlacklist(this.settings.brandSafetyConfig);
+    for (const banned of activeList) {
       const regex = new RegExp(`(^|[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ])${banned}([^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]|$)`, 'i');
       if (regex.test(lower) || lower.includes(banned)) {
         return { safe: false, reason: banned };
@@ -175,6 +183,12 @@ export class AutopilotService {
         const rawConfig = fs.readFileSync(this.configFilePath, 'utf-8');
         const parsed = JSON.parse(rawConfig);
         this.settings = { ...this.settings, ...parsed };
+        if (parsed.brandSafetyConfig) {
+          this.settings.brandSafetyConfig = {
+            ...DEFAULT_BRAND_SAFETY_CONFIG,
+            ...parsed.brandSafetyConfig,
+          };
+        }
       }
     } catch (e) {
       console.warn('[AutopilotService] Config load warning:', e);
@@ -301,6 +315,9 @@ export class AutopilotService {
     this.settings = { ...this.settings, ...partial };
     if (this.settings.archiveDirectory) {
       fs.mkdirSync(this.settings.archiveDirectory, { recursive: true });
+    }
+    if (this.settings.brandSafetyConfig) {
+      this.agencyService.setBrandSafetyConfig(this.settings.brandSafetyConfig);
     }
     this.savePersistence();
     this.emitState();

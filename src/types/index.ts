@@ -238,6 +238,83 @@ export interface AutopilotSettings {
   seriesOverlayBanner?: boolean; // Video üstüne "Part 1 | Devamı Part 2'de 👇" rozeti ekle (varsayılan: true)
   minSourceDurationSeconds?: number; // Kaynak video minimum süresi (varsayılan: 60)
   minViewCount?: number; // Minimum izlenme eşiği (varsayılan: 100000)
+  brandSafetyConfig?: BrandSafetyConfig; // 🛡️ Kanal Güvenliği & Kelime Filtresi
+}
+
+export interface BrandSafetyConfig {
+  blockPolitical: boolean; // Siyasi propaganda, parti ve liderler
+  blockTerrorAndSeparatist: boolean; // Terör, bölücü, etnik çatışma (Kürt/PKK vb.)
+  blockAdultAndNSFW: boolean; // +18, yetişkin, müstehcen içerik
+  blockViolenceAndGore: boolean; // Şiddet, kan, vahşet
+  blockSchoolAndLectures: boolean; // Okul dersleri, Tonguç Akademi, sınav (LGS/YKS vb.)
+  blockCommercialMCNs: boolean; // Ticari MCN, GAİN, Netd, TV kanalları
+  customBlacklistWords: string[]; // Kullanıcının eklediği özel yasaklı kelimeler
+}
+
+export const DEFAULT_BRAND_SAFETY_CONFIG: BrandSafetyConfig = {
+  blockPolitical: true,
+  blockTerrorAndSeparatist: true,
+  blockAdultAndNSFW: true,
+  blockViolenceAndGore: true,
+  blockSchoolAndLectures: true,
+  blockCommercialMCNs: true,
+  customBlacklistWords: [],
+};
+
+export const BRAND_SAFETY_DICTIONARIES = {
+  political: [
+    'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'iyip', 'zafer partisi',
+    'erdoğan', 'erdogan', 'recep tayyip', 'özgür özel', 'kılıçdaroğlu', 'mansur yavaş', 'ekrem imamoğlu',
+    'devlet bahçeli', 'selahattin demirtaş', 'siyaset', 'siyasi', 'seçim', 'milletvekili', 'meclis',
+    'tbmm', 'belediye başkanı', 'propaganda', 'hükümet', 'muhalefet', 'koalisyon', 'bakanlık'
+  ],
+  terror_separatist: [
+    'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
+    'gerilla', 'öcalan', 'ocalan', 'kandil', 'halkların demokratik', 'kürt hareketi', 'bölücü',
+    'kürt', 'kurt', 'kürdistan', 'kurdistan', 'peşmerge', 'pesmerge', 'rojava'
+  ],
+  adult_nsfw: [
+    '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak', 'mastürbasyon',
+    'escort', 'jigolo', 'lezbiyen', 'gay', 'fahişe', 'aldatma itirafı +18'
+  ],
+  violence_gore: [
+    'vahşet', 'kanlı', 'cinayet anı', 'katliam', 'infaz', 'intihar', 'tecavüz', 'taciz', 'işkence'
+  ],
+  school_lectures: [
+    'tonguç', 'tonguc', 'tonguç akademi', 'tonguc akademi', 'hocalara geldik', 'benim hocam',
+    'rehber matematik', 'rüştü hoca', 'mert hoca', 'şeref hoca', 'dershane', 'lgs', 'yks', 'kpss',
+    'öabt', 'ayt', 'tyt', 'soru çözümü', 'konu anlatımı', 'sınav hazırlık', 'ders notları',
+    'yazılıya hazırlık', 'eğitimhane', 'meb', 'okul dersi', 'sınav taktikleri'
+  ],
+  commercial_mcns: [
+    'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
+    'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
+    'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
+    'poll production', 'dmc', 'sony music', 'universal music', 'believe music'
+  ]
+};
+
+export function compileActiveBrandSafetyBlacklist(config?: BrandSafetyConfig): string[] {
+  const words: string[] = [];
+  const cfg = config || DEFAULT_BRAND_SAFETY_CONFIG;
+
+  if (cfg.blockPolitical !== false) words.push(...BRAND_SAFETY_DICTIONARIES.political);
+  if (cfg.blockTerrorAndSeparatist !== false) words.push(...BRAND_SAFETY_DICTIONARIES.terror_separatist);
+  if (cfg.blockAdultAndNSFW !== false) words.push(...BRAND_SAFETY_DICTIONARIES.adult_nsfw);
+  if (cfg.blockViolenceAndGore !== false) words.push(...BRAND_SAFETY_DICTIONARIES.violence_gore);
+  if (cfg.blockSchoolAndLectures !== false) words.push(...BRAND_SAFETY_DICTIONARIES.school_lectures);
+  if (cfg.blockCommercialMCNs !== false) words.push(...BRAND_SAFETY_DICTIONARIES.commercial_mcns);
+
+  if (Array.isArray(cfg.customBlacklistWords)) {
+    for (const w of cfg.customBlacklistWords) {
+      const trimmed = w.trim().toLowerCase();
+      if (trimmed && !words.includes(trimmed)) {
+        words.push(trimmed);
+      }
+    }
+  }
+
+  return words;
 }
 
 export interface CCVideoCandidate {

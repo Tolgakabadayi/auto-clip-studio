@@ -26,6 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "@tweenjs/tween.js": "^25.0.0",
+    "googleapis": "^183.0.0",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -23,15 +23,27 @@ import {
   Check,
   Building2,
   AlertTriangle,
-  Play
+  Play,
+  Radio,
+  ExternalLink,
+  BarChart3,
+  ThumbsUp,
+  MessageSquare,
+  TrendingUp,
+  Calendar,
+  Loader2
 } from 'lucide-react';
+import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import {
   LLMProvider,
   SubtitleStyleConfig,
   SystemHealth,
   AutopilotState,
   AgencyAgentConfig,
-  AgencyRole
+  AgencyRole,
+  YouTubeAuthStatus,
+  YouTubeAnalyticsData,
+  YouTubeVideoStat
 } from '../types';
 import { INITIAL_OFFICE_AGENTS, AgentOfficeNode } from './AgencyRoomModal';
 import { novaVoice } from '../utils/novaVoice';
@@ -76,7 +88,7 @@ interface SettingsModalProps {
   autopilotState: AutopilotState | null;
 }
 
-type TabType = 'ai' | 'office' | 'video' | 'docker' | 'autopilot';
+type TabType = 'ai' | 'office' | 'video' | 'docker' | 'autopilot' | 'youtube';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -129,6 +141,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return (localStorage.getItem('autoclip_copilot_tone') as any) || 'energetic';
   });
   const [showSaveToast, setShowSaveToast] = useState(false);
+
+  // YouTube Data API & Google OAuth State
+  const [youtubeAuth, setYoutubeAuth] = useState<YouTubeAuthStatus | null>(null);
+  const [youtubeAnalytics, setYoutubeAnalytics] = useState<YouTubeAnalyticsData | null>(null);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [isYoutubeLoading, setIsYoutubeLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [defaultPrivacy, setDefaultPrivacy] = useState<'public' | 'unlisted' | 'private'>(() => {
+    try {
+      return (localStorage.getItem('autoclip_youtube_privacy') as any) || 'public';
+    } catch {
+      return 'public';
+    }
+  });
 
   // Office Agents State for custom model assignments
   const [officeAgents, setOfficeAgents] = useState<AgentOfficeNode[]>(() => {
@@ -285,6 +311,75 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (unreg) unreg();
     };
   }, []);
+
+  // YouTube OAuth Status & Sync
+  const loadYouTubeStatus = async () => {
+    if (!window.electronAPI?.youtubeGetAuthStatus) return;
+    try {
+      const status = await window.electronAPI.youtubeGetAuthStatus();
+      setYoutubeAuth(status);
+    } catch (err: any) {
+      console.warn('YouTube status fetch failed:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadYouTubeStatus();
+    const unreg = window.electronAPI?.onYouTubeAuthUpdated?.((status: any) => {
+      setYoutubeAuth(status);
+    });
+    return () => {
+      if (unreg) unreg();
+    };
+  }, []);
+
+  const handleConnectYouTube = async () => {
+    if (!window.electronAPI?.youtubeLogin) return;
+    setIsYoutubeLoading(true);
+    setYoutubeError(null);
+    try {
+      await window.electronAPI.youtubeLogin();
+      await loadYouTubeStatus();
+    } catch (err: any) {
+      setYoutubeError(err.message || 'Google girişi tamamlanamadı.');
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    if (!window.electronAPI?.youtubeLogout) return;
+    setIsYoutubeLoading(true);
+    setYoutubeError(null);
+    try {
+      await window.electronAPI.youtubeLogout();
+      await loadYouTubeStatus();
+      setYoutubeAnalytics(null);
+    } catch (err: any) {
+      setYoutubeError(err.message);
+    } finally {
+      setIsYoutubeLoading(false);
+    }
+  };
+
+  const fetchYouTubeAnalytics = async () => {
+    if (!window.electronAPI?.youtubeGetAnalytics) return;
+    setIsLoadingAnalytics(true);
+    try {
+      const data = await window.electronAPI.youtubeGetAnalytics();
+      setYoutubeAnalytics(data);
+    } catch (err: any) {
+      console.warn('YouTube analytics fetch error:', err);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'youtube' && youtubeAuth?.isAuthenticated) {
+      fetchYouTubeAnalytics();
+    }
+  }, [activeTab, youtubeAuth?.isAuthenticated]);
 
   if (!isOpen) return null;
 
@@ -513,6 +608,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Zap className="w-4 h-4 text-emerald-400" />
             <span>🚀 7/24 Otopilot</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('youtube')}
+            className={`flex items-center space-x-2 px-4 py-2.5 border-b-2 font-bold text-xs transition-all ${
+              activeTab === 'youtube'
+                ? 'border-rose-500 text-white bg-rose-500/10 rounded-t-xl'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Youtube className="w-4 h-4 text-rose-500" />
+            <span>🔴 YouTube & Google API</span>
+            {youtubeAuth?.isAuthenticated && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+            )}
           </button>
         </div>
 
@@ -1467,6 +1577,362 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     ))}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 5: YOUTUBE DATA API & GOOGLE OAUTH                    */}
+          {/* ======================================================== */}
+          {activeTab === 'youtube' && (
+            <div className="space-y-6 animate-fadeIn">
+              {/* Status Header */}
+              <div className="p-4 rounded-2xl bg-dark-900 border border-dark-750 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center shadow-lg shadow-rose-600/30">
+                    <Youtube className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>YouTube Shorts & Data API v3 Entegrasyonu</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        youtubeAuth?.isAuthenticated
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                          : youtubeAuth?.isConfigured
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                      }`}>
+                        {youtubeAuth?.isAuthenticated
+                          ? '🟢 Kanal Bağlı & Yetkili'
+                          : youtubeAuth?.isConfigured
+                          ? '🟡 Giriş Bekleniyor'
+                          : '🔴 Yapılandırma Eksik'}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Üretilen 9:16 Shorts videolarını tek tıkla otomatik başlık, açıklama ve etiketlerle YouTube kanalınıza yükleyin.
+                    </p>
+                  </div>
+                </div>
+
+                {youtubeAuth?.isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectYouTube}
+                    disabled={isYoutubeLoading}
+                    className="px-3.5 py-1.5 rounded-xl bg-dark-850 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-dark-700 hover:border-rose-600/50 text-xs font-semibold transition-all disabled:opacity-50"
+                  >
+                    Bağlantıyı Kes
+                  </button>
+                )}
+              </div>
+
+              {/* Error Notice */}
+              {youtubeError && (
+                <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{youtubeError}</span>
+                </div>
+              )}
+
+              {/* Google Client Configuration Info */}
+              <div className="p-4 rounded-2xl bg-dark-900 border border-dark-750 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-brand-purple" />
+                    <span>Google OAuth 2.0 İstemci Bilgileri</span>
+                  </h4>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-800 text-slate-400 border border-dark-700">
+                    Özel Proje: mozart-456719
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-dark-850 border border-dark-750">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-1">
+                      Algılanan Client ID
+                    </span>
+                    <p className="font-mono text-slate-200 truncate select-all" title={youtubeAuth?.clientId || 'Bulunamadı'}>
+                      {youtubeAuth?.clientId || 'client_secret*.json aranıyor...'}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-dark-850 border border-dark-750">
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold mb-1">
+                      İzin Kapsamı (Scopes)
+                    </span>
+                    <span className="text-brand-cyan font-mono text-[11px]">
+                      youtube.upload, youtube.readonly
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Channel Profile Card (if connected) or Login Prompt */}
+              {youtubeAuth?.isAuthenticated && youtubeAuth.channel ? (
+                <div className="space-y-4">
+                  {/* Channel Header Card */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-r from-dark-900 via-dark-850 to-rose-950/20 border border-rose-500/30 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3.5">
+                        {youtubeAuth.channel.avatarUrl ? (
+                          <img
+                            src={youtubeAuth.channel.avatarUrl}
+                            alt="Channel Avatar"
+                            className="w-14 h-14 rounded-2xl border-2 border-rose-500 shadow-md object-cover"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold text-xl border-2 border-rose-500">
+                            {youtubeAuth.channel.title.charAt(0)}
+                          </div>
+                        )}
+
+                        <div>
+                          <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <span>{youtubeAuth.channel.title}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
+                              Yetkilendirildi
+                            </span>
+                          </h3>
+                          {youtubeAuth.channel.customUrl && (
+                            <span className="text-xs text-rose-400 font-mono block">
+                              {youtubeAuth.channel.customUrl}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            Kanal ID: {youtubeAuth.channel.id}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={fetchYouTubeAnalytics}
+                        disabled={isLoadingAnalytics}
+                        className="py-1.5 px-3 rounded-xl bg-dark-800 hover:bg-dark-750 text-slate-200 hover:text-white border border-dark-700 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                        title="Canlı YouTube verilerini ve izlenmeleri güncelle"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAnalytics ? 'animate-spin' : ''}`} />
+                        <span>Analizleri Yenile</span>
+                      </button>
+                    </div>
+
+                    {/* 4 Stat KPI Cards */}
+                    <div className="grid grid-cols-4 gap-2.5 pt-2 border-t border-dark-750/70">
+                      <div className="p-3 rounded-xl bg-dark-850/80 border border-dark-750">
+                        <span className="text-[10px] text-slate-400 block font-semibold flex items-center gap-1">
+                          <Eye className="w-3 h-3 text-cyan-400" />
+                          <span>Toplam İzlenme</span>
+                        </span>
+                        <span className="text-base font-black text-white font-mono mt-0.5 block">
+                          {youtubeAnalytics?.totalViews !== undefined
+                            ? youtubeAnalytics.totalViews.toLocaleString()
+                            : Number(youtubeAuth.channel.videoCount || 0) > 0 ? 'Hesaplanıyor...' : '0'}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-dark-850/80 border border-dark-750">
+                        <span className="text-[10px] text-slate-400 block font-semibold flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3 text-rose-400" />
+                          <span>Abone Sayısı</span>
+                        </span>
+                        <span className="text-base font-black text-white font-mono mt-0.5 block">
+                          {Number(youtubeAuth.channel.subscriberCount || 0).toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-dark-850/80 border border-dark-750">
+                        <span className="text-[10px] text-slate-400 block font-semibold flex items-center gap-1">
+                          <Film className="w-3 h-3 text-purple-400" />
+                          <span>Toplam Video</span>
+                        </span>
+                        <span className="text-base font-black text-white font-mono mt-0.5 block">
+                          {Number(youtubeAuth.channel.videoCount || 0).toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-dark-850/80 border border-dark-750">
+                        <span className="text-[10px] text-slate-400 block font-semibold flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-amber-400" />
+                          <span>Sıradaki Yayın</span>
+                        </span>
+                        <span className="text-xs font-bold text-amber-300 mt-1 block truncate" title={youtubeAnalytics?.nextScheduledUpload?.time || "Bugün 18:30 (Altın Saat)"}>
+                          {youtubeAnalytics?.nextScheduledUpload?.time || "Bugün 18:30"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 🔴 Atlas Partner (YouTube Büyüme Müdürü) Guidance Note */}
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/30 to-purple-950/20 border border-rose-500/25 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-rose-600/30 border border-rose-500/40 text-rose-300 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">
+                      🔴
+                    </div>
+                    <div className="text-xs space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white">Atlas Partner</span>
+                        <span className="text-[10px] font-mono text-rose-400 font-semibold">YouTube Büyüme & Kanal Müdürü</span>
+                      </div>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        Kanalınız ve Shorts akışınız izleniyor. Yüklenen videolarda 9:16 dikey kadraj, özel kapak tasarımı ve ilk 3 saniye kancaları izleyici tutma (retention) oranını maksimum seviyede tutuyor.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Video-by-Video Analytics List */}
+                  <div className="p-4 rounded-2xl bg-dark-900 border border-dark-750 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-brand-cyan" />
+                        <span>Yüklenen Videolar & Canlı İstatistikler ({youtubeAnalytics?.videos?.length || 0})</span>
+                      </h4>
+                      <span className="text-[10px] text-slate-400">
+                        {isLoadingAnalytics ? 'Veriler güncelleniyor...' : 'En son yüklenen Shorts & videolar'}
+                      </span>
+                    </div>
+
+                    {isLoadingAnalytics && !youtubeAnalytics ? (
+                      <div className="py-8 flex flex-col items-center justify-center space-y-2 text-slate-400 text-xs">
+                        <Loader2 className="w-6 h-6 animate-spin text-rose-500" />
+                        <span>YouTube Data API'den canlı izlenme ve etkileşimler alınıyor...</span>
+                      </div>
+                    ) : youtubeAnalytics?.videos && youtubeAnalytics.videos.length > 0 ? (
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {youtubeAnalytics.videos.map((vid: YouTubeVideoStat) => (
+                          <div
+                            key={vid.id}
+                            className="p-2.5 rounded-xl bg-dark-850 border border-dark-750 hover:border-dark-600 transition-colors flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                              {vid.thumbnailUrl ? (
+                                <img
+                                  src={vid.thumbnailUrl}
+                                  alt={vid.title}
+                                  className="w-14 h-9 rounded-lg object-cover border border-dark-700 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-14 h-9 rounded-lg bg-dark-800 flex items-center justify-center text-slate-500 shrink-0">
+                                  <Film className="w-4 h-4" />
+                                </div>
+                              )}
+                              <div className="min-w-0 truncate">
+                                <p className="font-semibold text-slate-200 truncate" title={vid.title}>
+                                  {vid.title}
+                                </p>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                  {vid.isShort && (
+                                    <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30">
+                                      Shorts
+                                    </span>
+                                  )}
+                                  <span>{new Date(vid.publishedAt).toLocaleDateString('tr-TR')}</span>
+                                  <span className="capitalize text-slate-400">• {vid.privacyStatus === 'public' ? 'Herkese Açık' : vid.privacyStatus === 'unlisted' ? 'Liste Dışı' : 'Gizli'}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="text-right flex items-center gap-3 text-xs">
+                                <span className="flex items-center gap-1 font-mono font-bold text-white" title="İzlenme">
+                                  <Eye className="w-3 h-3 text-cyan-400" />
+                                  <span>{vid.viewCount.toLocaleString()}</span>
+                                </span>
+                                <span className="flex items-center gap-1 font-mono text-slate-300" title="Beğeni">
+                                  <ThumbsUp className="w-3 h-3 text-emerald-400" />
+                                  <span>{vid.likeCount.toLocaleString()}</span>
+                                </span>
+                                <span className="flex items-center gap-1 font-mono text-slate-400" title="Yorum">
+                                  <MessageSquare className="w-3 h-3 text-purple-400" />
+                                  <span>{vid.commentCount.toLocaleString()}</span>
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.electronAPI?.openPath) {
+                                    window.electronAPI.openPath(vid.videoUrl);
+                                  } else {
+                                    window.open(vid.videoUrl, '_blank');
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white border border-dark-700 transition-colors"
+                                title="YouTube'da Aç"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-rose-400" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center text-xs text-slate-400 space-y-1">
+                        <p>Kanalda henüz listelenen video bulunamadı veya yüklemeler işleniyor.</p>
+                        <p className="text-[11px] text-slate-400">Yeni bir video yüklediğinizde istatistikler burada anlık belirecektir.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 rounded-2xl bg-gradient-to-tr from-dark-900 to-dark-850 border border-dark-750 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-600/20 border border-rose-500/40 text-rose-400 mx-auto flex items-center justify-center">
+                    <Youtube className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">
+                    Kanalınızı Şimdi Bağlayın
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    Google hesabınızla tek seferlik giriş yaparak AutoClip Studio'nun Shorts videolarınızı doğrudan kanalınıza yüklemesine izin verin.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={handleConnectYouTube}
+                    disabled={isYoutubeLoading}
+                    className="mt-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-500 hover:from-rose-500 hover:to-red-600 text-white font-bold text-xs transition-all shadow-lg shadow-rose-600/30 inline-flex items-center space-x-2 disabled:opacity-50"
+                  >
+                    {isYoutubeLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Google İle Bağlanıyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Youtube className="w-4 h-4" />
+                        <span>Google ile Giriş Yap & YouTube Kanalını Bağla</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Upload Privacy Default Setting */}
+              <div className="p-4 rounded-2xl bg-dark-900 border border-dark-750 space-y-3">
+                <h4 className="text-xs font-bold text-white">Varsayılan Yükleme Gizliliği</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { key: 'public', label: 'Herkese Açık (Public)', desc: 'Tüm izleyicilere anında yayınlanır' },
+                    { key: 'unlisted', label: 'Liste Dışı (Unlisted)', desc: 'Yalnızca bağlantıya sahip olanlar görür' },
+                    { key: 'private', label: 'Gizli (Private)', desc: 'Sadece kanal sahibi görebilir' },
+                  ].map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => {
+                        setDefaultPrivacy(p.key as any);
+                        try { localStorage.setItem('autoclip_youtube_privacy', p.key); } catch {}
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        defaultPrivacy === p.key
+                          ? 'bg-rose-500/10 border-rose-500 text-white shadow-md'
+                          : 'bg-dark-850 border-dark-750 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className="text-xs font-bold block">{p.label}</span>
+                      <span className="text-[10px] text-slate-500 mt-0.5 block">{p.desc}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

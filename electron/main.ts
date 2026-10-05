@@ -15,6 +15,7 @@ import { FaceTrackingService } from './services/faceTrackingService';
 import { AgencyService } from './services/agencyService';
 import { AutopilotService } from './services/autopilotService';
 import { CopilotService } from './services/copilotService';
+import { GoogleAuthService, YouTubeUploadPayload } from './services/googleAuthService';
 import {
   PipelineOptions,
   ViralClip,
@@ -203,6 +204,8 @@ const copilotService = new CopilotService(
   agencyService,
   llmService
 );
+
+const googleAuthService = new GoogleAuthService();
 
 copilotService.onSpeech = (speech) => {
   broadcastToWindows('copilot:speech', speech);
@@ -1188,5 +1191,106 @@ ipcMain.handle('dock:is-visible', () => {
   if (!dockWindow || dockWindow.isDestroyed()) return false;
   return dockWindow.isVisible();
 });
+
+// ========================================================
+// 🎥 YOUTUBE DATA API & GOOGLE OAUTH 2.0 INTEGRATION
+// ========================================================
+
+ipcMain.handle('youtube-auth:get-status', async () => {
+  try {
+    return await googleAuthService.getStatus();
+  } catch (err: any) {
+    return {
+      isConfigured: false,
+      isAuthenticated: false,
+      channel: null,
+      error: err.message,
+    };
+  }
+});
+
+ipcMain.handle('youtube-auth:login', async () => {
+  try {
+    const channel = await googleAuthService.login(mainWindow);
+    const status = await googleAuthService.getStatus();
+    broadcastToWindows('youtube-auth:updated', status);
+    broadcastToWindows('copilot:speech', {
+      message: `🎉 Tebrikler patron! "${channel.title}" YouTube kanalın başarıyla bağlandı! Kliplerini doğrudan Shorts olarak yayınlayabilirsin!`,
+      mood: 'success',
+    });
+    return channel;
+  } catch (err: any) {
+    broadcastToWindows('copilot:speech', {
+      message: `Google girişinde hata oluştu patron: ${err.message}`,
+      mood: 'alert',
+    });
+    throw err;
+  }
+});
+
+ipcMain.handle('youtube-auth:logout', async () => {
+  await googleAuthService.logout();
+  const status = await googleAuthService.getStatus();
+  broadcastToWindows('youtube-auth:updated', status);
+  broadcastToWindows('copilot:speech', {
+    message: 'YouTube kanalı bağlantısı kesildi patron.',
+    mood: 'idle',
+  });
+  return true;
+});
+
+ipcMain.handle('youtube-auth:upload-video', async (_event, payload: YouTubeUploadPayload) => {
+  try {
+    broadcastToWindows('copilot:speech', {
+      message: `🚀 "${payload.title.slice(0, 30)}..." klibi YouTube Shorts'a yükleniyor patron!`,
+      mood: 'working',
+    });
+
+    const result = await googleAuthService.uploadVideo(payload, (percent, uploaded, total) => {
+      broadcastToWindows('youtube-upload:progress', {
+        percent,
+        uploaded,
+        total,
+        title: payload.title,
+      });
+    });
+
+    broadcastToWindows('copilot:speech', {
+      message: `🔥 Harika haber patron! Klip YouTube Shorts'a yüklendi!`,
+      mood: 'success',
+    });
+
+    return result;
+  } catch (err: any) {
+    broadcastToWindows('copilot:speech', {
+      message: `YouTube yükleme hatası: ${err.message}`,
+      mood: 'alert',
+    });
+    throw err;
+  }
+});
+
+ipcMain.handle('youtube-auth:get-analytics', async () => {
+  try {
+    let nextScheduled = null;
+    try {
+      const apState = autopilotService.getState();
+      if (apState.nextRunAt) {
+        nextScheduled = {
+          time: apState.nextRunAt,
+          dayLabel: 'Otopilot Planı',
+          title: apState.currentAction || 'Sıradaki Otomatik Shorts Yayını',
+        };
+      }
+    } catch {}
+
+    const data = await googleAuthService.getChannelAnalytics(nextScheduled);
+    return data;
+  } catch (err: any) {
+    console.error('[Main] YouTube analytics fetch error:', err.message);
+    throw err;
+  }
+});
+
 
 

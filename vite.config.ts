@@ -55,7 +55,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['fsevents'],
+              external: ['fsevents', 'googleapis'],
             },
           },
           plugins: [copyPreloadPlugin()],

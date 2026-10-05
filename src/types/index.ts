@@ -157,7 +157,8 @@ export type AgencyRole =
   | 'sound_designer'
   | 'translator_multilingual'
   | 'hook_architect'
-  | 'security_supervisor';
+  | 'security_supervisor'
+  | 'youtube_manager';
 
 export interface AgencyAgentConfig {
   role: AgencyRole;
@@ -293,6 +294,70 @@ export interface CopilotSpeech {
   message: string;
   mood: 'idle' | 'working' | 'excited' | 'success' | 'alert';
   actionHint?: string;
+}
+
+export interface YouTubeChannelInfo {
+  id: string;
+  title: string;
+  customUrl?: string;
+  avatarUrl?: string;
+  subscriberCount?: string;
+  videoCount?: string;
+}
+
+export interface YouTubeAuthStatus {
+  isConfigured: boolean;
+  isAuthenticated: boolean;
+  clientId?: string;
+  clientSecretFile?: string;
+  channel: YouTubeChannelInfo | null;
+  error?: string;
+}
+
+export interface YouTubeUploadPayload {
+  filePath: string;
+  title: string;
+  description: string;
+  tags?: string[];
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  isShort?: boolean;
+  thumbnailPath?: string;
+}
+
+export interface YouTubeUploadResult {
+  success: boolean;
+  videoId?: string;
+  videoUrl?: string;
+  title?: string;
+  error?: string;
+}
+
+export interface YouTubeVideoStat {
+  id: string;
+  title: string;
+  description: string;
+  publishedAt: string;
+  thumbnailUrl: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  privacyStatus: 'public' | 'unlisted' | 'private' | string;
+  isShort: boolean;
+  videoUrl: string;
+}
+
+export interface YouTubeAnalyticsData {
+  channel: YouTubeChannelInfo | null;
+  totalViews: number;
+  subscriberCount: number;
+  totalVideos: number;
+  videos: YouTubeVideoStat[];
+  nextScheduledUpload?: {
+    time: string;
+    dayLabel: string;
+    title?: string;
+  } | null;
+  lastUpdated: string;
 }
 
 

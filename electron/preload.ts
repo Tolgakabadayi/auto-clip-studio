@@ -113,6 +113,22 @@ export const electronAPI = {
     ipcRenderer.on('dock:trigger-feature', subscription);
     return () => ipcRenderer.removeListener('dock:trigger-feature', subscription);
   },
+  // 🎥 YouTube API & Google OAuth Integration
+  youtubeGetAuthStatus: () => ipcRenderer.invoke('youtube-auth:get-status'),
+  youtubeLogin: () => ipcRenderer.invoke('youtube-auth:login'),
+  youtubeLogout: () => ipcRenderer.invoke('youtube-auth:logout'),
+  youtubeUploadVideo: (payload: any) => ipcRenderer.invoke('youtube-auth:upload-video', payload),
+  youtubeGetAnalytics: () => ipcRenderer.invoke('youtube-auth:get-analytics'),
+  onYouTubeAuthUpdated: (callback: (status: any) => void) => {
+    const subscription = (_event: any, value: any) => callback(value);
+    ipcRenderer.on('youtube-auth:updated', subscription);
+    return () => ipcRenderer.removeListener('youtube-auth:updated', subscription);
+  },
+  onYouTubeUploadProgress: (callback: (progress: any) => void) => {
+    const subscription = (_event: any, value: any) => callback(value);
+    ipcRenderer.on('youtube-upload:progress', subscription);
+    return () => ipcRenderer.removeListener('youtube-upload:progress', subscription);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -525,32 +525,88 @@ ${transcriptFormatted}
   }
 
   /**
+   * Helper to ensure 3 genuinely distinct, high-CTR viral titles for every clip
+   */
+  private ensureThreeDiverseTitles(rawTitles: string[], clip: ViralClip): string[] {
+    const cleanHook = (clip.hook_sentence || '').replace(/^[“"”\s]+|[“"”\s]+$/g, '').trim();
+    const cleanTitle = (clip.title || '').replace(/^[“"”\s]+|[“"”\s]+$/g, '').trim();
+    const words = cleanHook.split(/\s+/).filter(Boolean);
+    const shortHook = words.slice(0, 6).join(' ');
+    const kw1 = (clip.keywords && clip.keywords[0]) ? clip.keywords[0] : 'Bu Detay';
+    const kw2 = (clip.keywords && clip.keywords[1]) ? clip.keywords[1] : 'Gerçek';
+
+    const dynamicAngles = [
+      shortHook ? (shortHook.endsWith('?') ? shortHook : `${shortHook}! 🔥`) : `${cleanTitle}! 🔥`,
+      `${cleanTitle || shortHook} Hakkında Gizli Gerçek! 😱`,
+      `Bunu Biliyor muydunuz: ${kw1} Gerçekten Mümkün mü? 🤔`,
+      `Sakın Bu Hatayı Yapmayın: ${kw1}! ⚠️`,
+      `İtiraf Etti: "${shortHook || cleanTitle}" 👀`,
+    ];
+
+    const uniqueTitles: string[] = [];
+    const seen = new Set<string>();
+
+    for (const t of rawTitles || []) {
+      const trimmed = String(t || '').trim().replace(/^[\d+.)\s-]+/, '').trim();
+      const lower = trimmed.toLowerCase();
+      if (
+        trimmed.length >= 6 &&
+        !seen.has(lower) &&
+        !/^klip\s*#?\d*/i.test(trimmed) &&
+        !/^viral\s*kesit/i.test(trimmed) &&
+        !/^video\s*\d*/i.test(trimmed)
+      ) {
+        seen.add(lower);
+        uniqueTitles.push(trimmed);
+      }
+    }
+
+    for (const angle of dynamicAngles) {
+      if (uniqueTitles.length >= 3) break;
+      const lower = angle.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        uniqueTitles.push(angle);
+      }
+    }
+
+    return uniqueTitles.slice(0, 3);
+  }
+
+  /**
    * Generates high-CTR viral titles, descriptions, and hashtags for social media (TikTok/Shorts/Reels)
    */
   public async generateSocialCopy(
     clip: ViralClip,
     options: LLMAnalysisOptions
   ): Promise<SocialCopyMetadata> {
-    const prompt = `Sen TikTok, Instagram Reels ve YouTube Shorts için viral video editörü ve sosyal medya büyüme uzmanısın.
-Sana bilgileri verilen klip için maksimum tıklama, izlenme, yorum ve paylaşım getirecek sosyal medya içerik paketini oluştur.
+    const prompt = `Sen TikTok, Instagram Reels ve YouTube Shorts için uzman bir viral başlık ve büyüme stratejistisin.
+Sana bilgileri verilen klip için izleyicinin parmağını ekranda durduracak, maksimum tıklama (CTR) getirecek 3 ADET BİRBİRİNDEN TAMAMEN FARKLI TÜRKÇE BAŞLIK ve açıklama paketi hazırla.
 
 KLİP BİLGİLERİ:
-- Başlık: ${clip.title}
-- Giriş/Kanca Cümlesi (Hook): ${clip.hook_sentence || clip.title}
-- Klibin Seçilme Sebebi: ${clip.reason}
+- Mevcut Başlık: ${clip.title}
+- Giriş Kancası (Hook): ${clip.hook_sentence || clip.title}
+- Seçilme Sebebi / Konu: ${clip.reason}
 - Klip Süresi: ${clip.duration_seconds} saniye
 - Anahtar Kelimeler: ${clip.keywords?.join(', ') || ''}
+
+TAVİZSİZ BAŞLIK KURALLARI:
+1. 3 başlık da birbirinden TAMAMEN FARKLI bir açıdan yazılmalıdır:
+   - Başlık 1 (Vurucu İtiraf/Kanca): Konuşmadaki kilit cümleye veya sonuca odaklanan çarpıcı başlık.
+   - Başlık 2 (Merak/Soru): İzleyiciyi soruyla merakta bırakan başlık (örn: Gerçekten böyle mi?).
+   - Başlık 3 (Şok/Uyarı/Zıt Köşe): "Bunu kimse söylemiyor" veya "Büyük hata" temalı iddialı başlık.
+2. Jenerik, boş veya birbirinin kopyası başlıklar KESİNLİKLE YASAKTIR. Doğrudan klibin konusunu içermelidir.
 
 GÖREVİN VE ÇIKTI FORMATI:
 Aşağıdaki JSON şemasında KESİNLİKLE geçerli bir JSON döndür:
 {
   "titles": [
-    "1. Merak Uyandıran Soru Başlığı (örn: Bunu gerçekten biliyor muydunuz? 😱)",
-    "2. Şok Edici / İddialı Kanca Başlığı (örn: Bu hatayı sakın yapmayın!)",
-    "3. Kısa & Vurucu Trend Başlık (örn: Hayatınızı değiştirecek detay...)"
+    "1. Konuya özel birinci vurucu başlık",
+    "2. Konuya özel ikinci soru/merak başlığı?",
+    "3. Konuya özel üçüncü şok/uyarı başlığı!"
   ],
-  "description": "Video hakkında izleyiciyi meraklandıracak 2-3 cümlelik, emojilerle zenginleştirilmiş, akıcı ve ilgi çekici açıklama metni.",
-  "callToAction": "İzleyiciden yorum veya kaydetme isteyen güçlü bir çağrı (örn: Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇)",
+  "description": "Video hakkında izleyiciyi meraklandıracak 2-3 cümlelik, emojilerle zenginleştirilmiş akıcı açıklama metni.",
+  "callToAction": "İzleyiciden yorum veya kaydetme isteyen güçlü bir çağrı (örn: Sizce haklı mı? Yorumlarda buluşalım 👇)",
   "hashtags": [
     "#shorts", "#viral", "#fyp", "#keşfet", "#reels", "#tiktok",
     "#trend", "#video"
@@ -574,11 +630,11 @@ SADECE JSON döndür. Başka hiçbir açıklama ekleme.`;
         cleaned = cleaned.substring(firstBrace, lastBrace + 1);
       }
       const parsed = JSON.parse(cleaned);
+      const rawTitles = Array.isArray(parsed.titles) ? parsed.titles : [];
+      const distinctTitles = this.ensureThreeDiverseTitles(rawTitles, clip);
 
       return {
-        titles: Array.isArray(parsed.titles) && parsed.titles.length > 0
-          ? parsed.titles
-          : [clip.title, `Şok Detay: ${clip.title}`, `Bunu Biliyor muydunuz? 😱`],
+        titles: distinctTitles,
         description: parsed.description || clip.hook_sentence || 'Bu videodaki önemli anı kaçırmayın!',
         callToAction: parsed.callToAction || 'Siz bu konuda ne düşünüyorsunuz? Yorumlarda belirtin! 👇',
         hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0
@@ -587,12 +643,9 @@ SADECE JSON döndür. Başka hiçbir açıklama ekleme.`;
       };
     } catch (e: any) {
       console.warn('[LLMService] Social copy parsing failed, fallback used:', e.message);
+      const fallbackTitles = this.ensureThreeDiverseTitles([], clip);
       return {
-        titles: [
-          clip.title,
-          `İnanamayacaksınız: ${clip.title} 🔥`,
-          `Bunu mutlaka izleyin! 😱`
-        ],
+        titles: fallbackTitles,
         description: `${clip.hook_sentence || clip.title}\n\nDaha fazlası için takip etmeyi unutmayın!`,
         callToAction: 'Siz ne düşünüyorsunuz? Yorumlarda buluşalım! 👇',
         hashtags: ['#shorts', '#viral', '#fyp', '#reels', '#keşfet', '#trend', '#video', '#öneçıkar'],

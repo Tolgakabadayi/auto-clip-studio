@@ -293,6 +293,23 @@ export const INITIAL_OFFICE_AGENTS: AgentOfficeNode[] = [
     isExtra: true,
     enabled: true,
   },
+  {
+    role: 'youtube_manager',
+    name: 'Atlas Partner',
+    model: 'qwen3:8b',
+    avatar: '🔴',
+    department: 'YouTube Partner & Kanal Büyüme',
+    title: 'YouTube Kanal & Büyüme Müdürü',
+    description: 'YouTube kanalının izlenme, beğeni ve abone analizlerini izler; Shorts performansını takip eder ve bir sonraki yayın saatini koordine eder.',
+    accentColor: 'text-rose-400',
+    badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    borderColor: 'border-rose-500/40 hover:border-rose-400',
+    glowColor: 'shadow-rose-500/30',
+    workDescription: 'YouTube kanal analizlerini tarıyor, izlenme/etkileşim metriklerini ve bir sonraki Shorts yayın yuvasını planlıyor...',
+    deliverableTitle: 'YouTube Kanal Raporu & Yayın Planı Hazır',
+    isExtra: true,
+    enabled: true,
+  },
 ];
 
 export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({

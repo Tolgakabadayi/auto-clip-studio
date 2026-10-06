@@ -440,62 +440,16 @@ export const App: React.FC = () => {
     if (!window.electronAPI) return;
     setIsProcessing(true);
 
-    if (!videoMetadata) {
-      setLogs((prev) => [
-        ...prev,
-        '👑 [NEXUS WAR ROOM]: 12 Ajan Stratejik Keşif Toplantısı başlatıldı! YouTube Creative Commons videoları taranıyor, Sentinel telif & müzik denetliyor, Hook Master viralliği hesaplıyor...',
-      ]);
-      try {
-        if (window.electronAPI.startDiscoveryMeeting) {
-          await window.electronAPI.startDiscoveryMeeting();
-        }
-      } catch (err: any) {
-        setLogs((prev) => [...prev, `[HATA] Stratejik toplantı hatası: ${err.message}`]);
-        alert(`Ajans toplantısı hatası: ${err.message}`);
-      } finally {
-        setIsProcessing(false);
-      }
-      return;
-    }
-
-    setLogs((prev) => [...prev, '👑 [3D Ajans Odası] Canlı toplantı ve analiz doğrudan başlatıldı...']);
-    const startTime = Date.now();
+    setLogs((prev) => [
+      ...prev,
+      '👑 [NEXUS WAR ROOM]: 12 Ajan Stratejik Keşif Toplantısı başlatıldı! YouTube Creative Commons videoları taranıyor, Sentinel telif & müzik denetliyor, Hook Master viralliği hesaplıyor...',
+    ]);
     try {
-      const options: PipelineOptions = {
-        videoPath: videoMetadata.path,
-        aspectRatio,
-        layoutMode,
-        whisperModel,
-        language,
-        llmProvider: 'ollama',
-        ollamaModel: ollamaModel || 'gemma3:4b',
-        groqApiKey: groqApiKey.trim(),
-        groqModel: groqModel || 'llama-3.3-70b-versatile',
-        subtitleConfig,
-        outputDirectory: outputDirectory || undefined,
-        clipCount,
-        minClipDuration,
-        maxClipDuration,
-        agencyMode: true,
-        agencyAgents,
-      };
-      const resultClips = await window.electronAPI.runAgencyPipeline(options);
-      if (resultClips && resultClips.length > 0) {
-        setClips(resultClips);
-        setLogs((prev) => [...prev, `👑 [Ajans Odası] Toplantı tamamlandı! ${resultClips.length} klip onaylandı.`]);
-        const elapsedSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-        setLatestOperationResult({
-          videoName: videoMetadata?.name || 'Otonom Video',
-          clips: resultClips,
-          projectDir: outputDirectory || '',
-          elapsedSeconds,
-          completedAt: new Date(),
-          totalClips: resultClips.length,
-        });
-        setShowSummaryModal(true);
+      if (window.electronAPI.startDiscoveryMeeting) {
+        await window.electronAPI.startDiscoveryMeeting();
       }
     } catch (err: any) {
-      setLogs((prev) => [...prev, `[HATA] Ajans toplantısı hatası: ${err.message}`]);
+      setLogs((prev) => [...prev, `[HATA] Stratejik toplantı hatası: ${err.message}`]);
       alert(`Ajans toplantısı hatası: ${err.message}`);
     } finally {
       setIsProcessing(false);

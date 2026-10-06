@@ -1768,8 +1768,11 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                 <div className="pt-3 border-t border-dark-750 flex items-center justify-between gap-3">
                   <button
                     onClick={() => {
-                      if (onRunAgency) onRunAgency();
-                      else if (window.electronAPI?.autopilotRunBatch) window.electronAPI.autopilotRunBatch(1);
+                      if (window.electronAPI?.autopilotRunBatch) {
+                        window.electronAPI.autopilotRunBatch(1);
+                      } else if (onRunAgency) {
+                        onRunAgency();
+                      }
                     }}
                     disabled={isProcessing || isSavingSeriesSettings}
                     className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs transition-all shadow-md shadow-amber-600/30 flex items-center justify-center gap-1.5 disabled:opacity-50"

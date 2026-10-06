@@ -1094,11 +1094,6 @@ ipcMain.handle('agency:run-pipeline', async (_event, payload: {
   transcript?: TranscriptResult;
   options: PipelineOptions;
 }) => {
-  const currentTranscript = payload.transcript || activeTranscript;
-  if (!currentTranscript || !currentTranscript.segments || currentTranscript.segments.length === 0) {
-    throw new Error('Aktif bir transkript bulunamadı. Önce bir video seçilmeli veya deşifre edilmelidir.');
-  }
-
   const sendAgencyMessage = (msg: AgencyMessage) => {
     broadcastToWindows('agency:message', msg);
   };
@@ -1108,6 +1103,27 @@ ipcMain.handle('agency:run-pipeline', async (_event, payload: {
   const sendLog = (l: string) => {
     broadcastToWindows('pipeline:log', l);
   };
+
+  let currentTranscript = payload.transcript || activeTranscript;
+  const targetVideoPath = payload.options?.videoPath || activeVideoPath;
+
+  if (!currentTranscript || !currentTranscript.segments || currentTranscript.segments.length === 0) {
+    if (targetVideoPath && fs.existsSync(targetVideoPath)) {
+      sendLog(`🎙️ [Sentinel & Whisper]: Video için transkript bulunamadı (${path.basename(targetVideoPath)}). Otomatik ses ayıklama ve Whisper deşifresi yapılıyor...`);
+      const tempWav = path.join(path.dirname(targetVideoPath), 'audio_extracted.wav');
+      await ffmpegService.extractAudio(targetVideoPath, tempWav);
+      currentTranscript = await whisperService.transcribe(
+        tempWav,
+        payload.options?.whisperModel || 'small',
+        payload.options?.language || 'auto'
+      );
+      activeTranscript = currentTranscript;
+      activeTranscriptVideoPath = targetVideoPath;
+      sendLog(`✓ [Whisper Tamamlandı]: ${currentTranscript.segments?.length || 0} segment deşifre edildi, ajans analizine aktarılıyor.`);
+    } else {
+      throw new Error('Aktif bir transkript veya video dosyası bulunamadı. Lütfen önce bir video seçin veya Stratejik Toplantı başlatın.');
+    }
+  }
 
   return await agencyService.runAgencyPipeline(currentTranscript, {
     ollamaHost: payload.options.ollamaHost,

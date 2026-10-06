@@ -375,6 +375,8 @@ export class YouTubeService {
         ...this.baseArgs,
         '--force-ipv4', // Instant IPv4 connection (eliminates 15s Windows IPv6 timeout)
         '--socket-timeout', '15',
+        '--extractor-args', 'youtube:player_client=android,web;player_skip=webpage,configs',
+        '--no-check-certificates',
         '--compat-options', 'no-youtube-channel-redirect',
         '--no-playlist',
         '--newline',

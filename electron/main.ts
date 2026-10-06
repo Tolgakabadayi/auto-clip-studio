@@ -1137,6 +1137,9 @@ ipcMain.handle('agency:start-discovery-meeting', async (_event, payload?: { nich
   };
 
   const apSettings = autopilotService.getSettings();
+  if (apSettings.brandSafetyConfig) {
+    agencyService.setBrandSafetyConfig(apSettings.brandSafetyConfig);
+  }
   const niche = payload?.niche || apSettings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri';
   const keyword = payload?.keyword || apSettings.customKeyword || undefined;
 

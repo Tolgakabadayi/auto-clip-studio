@@ -426,16 +426,22 @@ export class AutopilotService {
     const lines = rawOutput.split(/\r?\n/).filter(Boolean);
     const seenChannelsInBatch = new Set<string>();
 
-    // Comprehensive blacklist of TV channels, commercial MCNs, music labels, and school lecture channels
-    const riskyEntities = [
-      'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
-      'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
-      'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
-      'poll production', 'dmc', 'sony music', 'universal music', 'believe music',
-      // School, curriculum & exam prep channels (permanently block Tonguç Akademi and course lectures)
-      'tonguç', 'tonguc', 'dershane', 'lgs', 'yks', 'kpss', 'öabt', 'akademi', 'hocalara', 'benim hocam',
-      'rehber matematik', 'rüştü hoca', 'mert hoca', 'soru çözümü', 'konu anlatımı'
-    ];
+    // Blacklist of commercial MCNs and school channels based on active Brand Safety settings
+    const riskyEntities: string[] = [];
+    if (this.settings.brandSafetyConfig?.blockCommercialMCNs !== false) {
+      riskyEntities.push(
+        'vevo', 'topic', 'netflix', 'disney', 'bbc', 'trt', 'acun', 'exxen', 'paramount', 'warner',
+        'wediacorp', 'wedia corp', 'gain', 'netd', 'doğan', 'ciner', 'kanald', 'showtv', 'startv',
+        'atv', 'blutv', 'turkuvaz', 'ay yapım', 'ayyapim', 'medyapım', 'medyapim', 'timsprod',
+        'poll production', 'dmc', 'sony music', 'universal music', 'believe music'
+      );
+    }
+    if (this.settings.brandSafetyConfig?.blockSchoolAndLectures !== false) {
+      riskyEntities.push(
+        'tonguç', 'tonguc', 'dershane', 'lgs', 'yks', 'kpss', 'öabt', 'akademi', 'hocalara', 'benim hocam',
+        'rehber matematik', 'rüştü hoca', 'mert hoca', 'soru çözümü', 'konu anlatımı'
+      );
+    }
 
     for (const line of lines) {
       try {
@@ -464,16 +470,16 @@ export class AutopilotService {
         const channelName = (item.uploader || item.channel || '').toLowerCase();
         const descText = (item.description || '').toLowerCase();
 
-        // 🛡️ Pre-filter known risky commercial TV & MCN networks
-        if (riskyEntities.some((r) => channelName.includes(r))) {
-          this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${item.title}" ticari medya ağı (${channelName}) nedeniyle güvenlik gereği elendi.`);
+        // 🛡️ Pre-filter known risky commercial TV & MCN networks (if active)
+        if (riskyEntities.length > 0 && riskyEntities.some((r) => channelName.includes(r))) {
+          this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${item.title}" ticari/ders kanalı ağı (${channelName}) nedeniyle güvenlik gereği elendi.`);
           continue;
         }
 
-        // 🛡️ BRAND SAFETY PRE-FILTER: Strictly reject political polemics, terrorism, ethnic conflict, and +18 content
+        // 🛡️ BRAND SAFETY PRE-FILTER: Evaluates strictly against active settings
         const itemSafety = this.checkBrandSafety(`${item.title} ${channelName} ${descText}`);
         if (!itemSafety.safe) {
-          this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${item.title}" (${itemSafety.reason}) siyasi/terör/+18 filtresi nedeniyle elendi.`);
+          this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${item.title}" (${itemSafety.reason}) aktif güvenlik kuralı nedeniyle elendi.`);
           continue;
         }
 
@@ -530,7 +536,7 @@ export class AutopilotService {
             `${probe.title} ${probe.channel || ''} ${probe.description || ''}`
           );
           if (!probeSafety.safe) {
-            this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${probe.title}" (${probeSafety.reason}) siyasi/terör/+18 filtresi nedeniyle elendi.`);
+            this.emitLog(`🛡️ [Güvenlik Kalkanı: REDDEDİLDİ] "${probe.title}" (${probeSafety.reason}) aktif güvenlik kuralı nedeniyle elendi.`);
             continue;
           }
 
@@ -1071,7 +1077,7 @@ export class AutopilotService {
     const transcriptSafety = this.checkBrandSafety(transcript.text || '');
     if (!transcriptSafety.safe) {
       throw new Error(
-        `Kanal Güvenlik Kalkanı: Video transkriptinde "${transcriptSafety.reason}" içeriği tespit edildi. Siyasi propaganda, terör veya +18 içerikler kanal güvenliği ve YouTube politikaları gereği derhal engellendi.`
+        `Kanal Güvenlik Kalkanı: Video transkriptinde "${transcriptSafety.reason}" içeriği tespit edildi. Aktif kanal güvenlik filtresi gereği video işleme alınmadı.`
       );
     }
 

@@ -1607,14 +1607,16 @@ YANITINI SADECE VE SADECE AŞAĞIDAKİ JSON DİZİSİ FORMATINDA VER:
     const activeForbidden = compileActiveBrandSafetyBlacklist(this.brandSafetyConfig);
     const forbiddenSummary = activeForbidden.slice(0, 30).join(', ');
 
+    const safetyConstraint = activeForbidden.length > 0
+      ? `\nKANAL GÜVENLİĞİ VE YASAKLI FİLTRELER: Kullanıcının Kanal Güvenliği paneli gereği şu kavramlar, kanallar ve temalar KESİNLİKLE elenmeli ve arama sorgusu olarak ÜRETİLMEMELİDİR:\n${forbiddenSummary}`
+      : '';
+
     try {
       const prompt = `Sen uzman bir Sosyal Medya Trend Avcısısın.
 Hedef Niş / Kategori: "${niche}"
 ${customKeyword ? `Özel Arama Terimi: "${customKeyword}"` : ''}
 
-GÖREV: YouTube üzerinde Creative Commons (CC-BY) lisanslı, yüksek izlenme potansiyeline sahip, özellikle GERÇEK HAYAT HİKAYELERİ, SAMİMİ RÖPORTAJLAR, İTİRAFLAR, İLHAM VERİCİ YAŞAM DERSLERİ ve DERİN PODCAST SOHBETLERİ içeren videoları bulmak için 3 adet vurucu arama sorgusu üret.
-KANAL GÜVENLİĞİ VE YASAKLI FİLTRELER: Kullanıcının Kanal Güvenliği paneli gereği şu kavramlar, kanallar ve temalar KESİNLİKLE elenmeli ve arama sorgusu olarak ÜRETİLMEMELİDİR:
-${forbiddenSummary}
+GÖREV: YouTube üzerinde Creative Commons (CC-BY) lisanslı, yüksek izlenme potansiyeline sahip, özellikle GERÇEK HAYAT HİKAYELERİ, SAMİMİ RÖPORTAJLAR, İTİRAFLAR, İLHAM VERİCİ YAŞAM DERSLERİ ve DERİN PODCAST SOHBETLERİ içeren videoları bulmak için 3 adet vurucu arama sorgusu üret.${safetyConstraint}
 Sorgular doğrudan YouTube arama çubuğuna yazılacak şekilde Türkçe olsun (Örn: "gerçek hayat hikayesi röportaj", "yaşam mücadelesi podcast", "sokak röportajı hayat dersi").
 
 SADECE JSON FORMATINDA DİZİ VER:
@@ -1767,32 +1769,23 @@ SADECE JSON FORMATINDA DİZİ VER:
       };
     }
 
-    // 4. Brand Safety Policy Check: Reject political propaganda, terrorism, and +18 content
-    const brandSafetyWords = [
-      'akp', 'ak parti', 'chp', 'mhp', 'hdp', 'dem parti', 'zafer partisi',
-      'erdoğan', 'erdogan', 'özgür özel', 'kılıçdaroğlu', 'siyaset', 'seçim', 'milletvekili', 'meclis',
-      'pkk', 'ypg', 'pyd', 'kck', 'hpg', 'dhkp-c', 'fetö', 'feto', 'deaş', 'işid', 'terör', 'terörist',
-      'öcalan', 'ocalan', 'kandil', 'kürt hareketi', 'bölücü',
-      '+18', '18+', 'cinsel', 'müstehcen', 'porno', 'erotik', 'seks', 'çıplak',
-      'vahşet', 'kanlı', 'cinayet', 'katliam', 'infaz', 'intihar', 'tecavüz'
-    ];
-
-    const isViolatingSafety = brandSafetyWords.some((word) => textToCheck.includes(word));
-    if (isViolatingSafety) {
+    // 4. Dynamic Brand Safety Policy Check: Strictly respects user's active Settings filters
+    const safety = this.checkBrandSafety(textToCheck);
+    if (!safety.safe) {
       this.emitMessage(
         options,
         'copyright_auditor',
         auditor.name,
         auditor.model,
         'security',
-        `❌ [GÜVENLİK VE POLİTİKA REDDİ]: "${video.title}" videosu siyasi propaganda, terör veya +18 içerik filtresine takıldı! Kanal güvenliği gereği video derhal ELENDİ.`
+        `❌ [GÜVENLİK FİLTRESİ]: "${video.title}" videosu aktif kanal güvenlik kuralına (${safety.reason}) takıldı! Video derhal ELENDİ.`
       );
       return {
         approved: false,
         monetizationSafe: false,
         safetyScore: 0,
         attribution: '',
-        notes: 'Siyasi propaganda, terörizm veya +18 hassas içerik filtresi nedeniyle reddedildi.',
+        notes: `Aktif kanal güvenlik kuralı (${safety.reason}) nedeniyle reddedildi.`,
       };
     }
 
@@ -1931,13 +1924,28 @@ SADECE JSON FORMATINDA DİZİ VER:
       `Stratejik Beyin Fırtınası Toplantısını açıyorum! Kanal çeşitliliğini maksimize etmek ve tek kanala (Tonguç vb.) bağımlılığı sıfırlamak için 6 farklı kategoride (Röportaj & Gerçek Hayat, Podcast & Sohbet, Bilim & Teknoloji, Psikoloji, Tarih & Gizem, Girişimcilik) en az 6 adet %100 Creative Commons adayı tespit edeceğiz.`
     );
 
+    const activeRules: string[] = [];
+    if (this.brandSafetyConfig.blockPolitical) activeRules.push('siyasi propaganda');
+    if (this.brandSafetyConfig.blockTerrorAndSeparatist) activeRules.push('terör/bölücü');
+    if (this.brandSafetyConfig.blockAdultAndNSFW) activeRules.push('+18/müstehcen');
+    if (this.brandSafetyConfig.blockViolenceAndGore) activeRules.push('şiddet/vahşet');
+    if (this.brandSafetyConfig.blockSchoolAndLectures) activeRules.push('okul/ders');
+    if (this.brandSafetyConfig.blockCommercialMCNs) activeRules.push('ticari MCN/müzik');
+    if (this.brandSafetyConfig.customBlacklistWords && this.brandSafetyConfig.customBlacklistWords.length > 0) {
+      activeRules.push('özel yasaklı terimler');
+    }
+
+    const safetyRequirement = activeRules.length > 0
+      ? `, ${activeRules.join('/')} riski taşımayan`
+      : '';
+
     this.emitMessage(
       options as any,
       'art_director',
       director.name,
       director.model,
       'action',
-      `@RadarScout @TrendHunter @SentinelGuard: 6 niş kategoriyi eş zamanlı tarayın. Sadece %100 CC-BY tescilli, ticari müziği olmayan, siyasi/terör/+18 ve okul/sınav dersi riski taşımayan, her biri FARKLI kanallardan 6 elit videoyu masaya getirin.`
+      `@RadarScout @TrendHunter @SentinelGuard: 6 niş kategoriyi eş zamanlı tarayın. Sadece %100 CC-BY tescilli, ticari müziği olmayan${safetyRequirement}, her biri FARKLI kanallardan 6 elit videoyu masaya getirin.`
     );
 
     // 2. DISCOVERY & AUDIT: Multi-category search (1 video per category, 6 distinct channels)

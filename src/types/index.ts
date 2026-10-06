@@ -442,6 +442,21 @@ export interface UploadRecord {
   sourceVideoUrl?: string;
 }
 
+export type CopilotActionType =
+  | 'open_pitches'
+  | 'start_meeting'
+  | 'open_agency'
+  | 'open_autopilot'
+  | 'open_settings'
+  | 'start_pipeline'
+  | 'dismiss';
+
+export interface CopilotSpeechAction {
+  label: string;
+  action: CopilotActionType;
+  payload?: any;
+}
+
 export interface CopilotMessage {
   id: string;
   sender: 'user' | 'assistant' | 'system';
@@ -450,12 +465,16 @@ export interface CopilotMessage {
   actionTaken?: string;
   status?: 'thinking' | 'acting' | 'done' | 'error';
   metadata?: any;
+  action?: CopilotSpeechAction;
 }
 
 export interface CopilotSpeech {
   message: string;
   mood: 'idle' | 'working' | 'excited' | 'success' | 'alert';
   actionHint?: string;
+  action?: CopilotSpeechAction;
+  source?: 'system' | 'ambient' | 'user' | 'meeting' | 'pipeline';
+  timestamp?: number;
 }
 
 export interface YouTubeChannelInfo {

@@ -17,7 +17,9 @@ export class CopilotService {
 
   public onSpeech: ((speech: CopilotSpeech) => void) | null = null;
   public onMessage: ((msg: CopilotMessage) => void) | null = null;
-  public onOpenModal: ((modal: 'agency' | 'autopilot') => void) | null = null;
+  public onOpenModal: ((modal: 'agency' | 'autopilot' | 'settings' | 'pitches') => void) | null = null;
+  public onTriggerMeeting: ((options?: any) => Promise<any>) | null = null;
+  public onDownloadVideo: ((url: string) => Promise<any>) | null = null;
 
   constructor(
     private autopilotService: AutopilotService,
@@ -69,7 +71,203 @@ export class CopilotService {
 
     const lower = text.toLowerCase();
 
-    // 2. Intent: Open Autopilot Modal
+    // 2. Intent: Direct YouTube URL Detection & Download
+    const ytUrlMatch = text.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[\w-]+[^\s]*/);
+    if (ytUrlMatch) {
+      const url = ytUrlMatch[0];
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: `📥 YouTube bağlantısı algılandı: ${url}\n\nVideoyu stüdyo kurgu hattına indirmeye başladım patron! İndirme bittiğinde 2. aşamada klip ayarlarını belirleyebilirsin.`,
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'acting',
+        actionTaken: 'download_youtube',
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: '📥 YouTube videosu indiriliyor patron! Kurgu hattına alıyorum...',
+        mood: 'working',
+      });
+
+      if (this.onDownloadVideo) {
+        this.onDownloadVideo(url).catch((err) => {
+          this.emitSpeech({
+            message: `⚠️ Video indirme hatası: ${err.message}`,
+            mood: 'alert',
+          });
+        });
+      }
+      return replyMsg;
+    }
+
+    // 3. Intent: Start Strategic Discovery Meeting
+    if (
+      lower.includes('toplantı') ||
+      lower.includes('toplantıyı başlat') ||
+      lower.includes('keşif başlat') ||
+      lower.includes('beyin fırtınası') ||
+      lower.includes('stratejik toplantı') ||
+      lower.includes('ajanlar toplansın')
+    ) {
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: '🚀 12 Ajanlı Stratejik Keşif Toplantısı başlatıldı patron! Scout Gemma, Trend Hunter ve Sentinel masada en viral videoları arıyor. Toplantı bittiğinde adayları hemen önüne getireceğim!',
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'acting',
+        actionTaken: 'start_meeting',
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: '🚀 12 Ajanlı Keşif Toplantısı başladı patron! Ekip masada viral adayları avlıyor...',
+        mood: 'excited',
+      });
+
+      if (this.onOpenModal) {
+        this.onOpenModal('agency');
+      }
+
+      if (this.onTriggerMeeting) {
+        this.onTriggerMeeting().catch((err) => {
+          this.emitSpeech({
+            message: `⚠️ Toplantı sırasında sorun: ${err.message}`,
+            mood: 'alert',
+          });
+        });
+      }
+      return replyMsg;
+    }
+
+    // 4. Intent: Open Pitch Deck / Curated Candidate Pitches
+    if (
+      lower.includes('viral aday') ||
+      lower.includes('adaylar') ||
+      lower.includes('adayları göster') ||
+      lower.includes('sonuçları aç') ||
+      lower.includes('sonuçlar') ||
+      lower.includes('sunum masası') ||
+      lower.includes('pitch deck') ||
+      lower.includes('seçenekler')
+    ) {
+      if (this.onOpenModal) this.onOpenModal('pitches');
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: '🎯 Viral Adaylar sunum masasını ekrana getirdim patron! Ekibin onayladığı Creative Commons videolarından dilediğini seçip tek tıkla kurguya gönderebilirsin.',
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'done',
+        actionTaken: 'open_pitches',
+        action: {
+          label: '🎯 Viral Adayları İncele & Seç',
+          action: 'open_pitches',
+        },
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: '🎯 Viral Adaylar sunum masasını açtım patron! Masadaki adayları inceleyebilirsin.',
+        mood: 'excited',
+        action: {
+          label: '🎯 Viral Adayları İncele & Seç',
+          action: 'open_pitches',
+        },
+      });
+      return replyMsg;
+    }
+
+    // 5. Intent: Studio Status & Diagnostics Report
+    if (
+      lower.includes('durum ne') ||
+      lower.includes('rapor ver') ||
+      lower.includes('rapor') ||
+      lower.includes('stüdyo durumu') ||
+      lower.includes('nasıl gidiyor') ||
+      lower.includes('ajanlar ne yapıyor') ||
+      lower.includes('teşhis')
+    ) {
+      const apState = this.autopilotService.getState();
+      const apRunningText = apState.isRunning ? '✅ 7/24 Aktif ve devriyede' : '⏸️ Beklemede (Pasif)';
+      const queueCount = apState.packages ? apState.packages.length : 0;
+      const candidatesCount = apState.candidates ? apState.candidates.length : 0;
+      const totalGen = apState.stats?.totalGenerated || 0;
+      const nextRun = apState.nextSlotInfo ? `${apState.nextSlotInfo.slotTime} (${apState.nextSlotInfo.minutesRemaining} dk kaldı)` : 'Planlanmamış';
+
+      const statusText = `📊 AUTO-CLIP STUDIO DURUM RAPORU 📊\n` +
+        `• 7/24 Otopilot Durumu: ${apRunningText}\n` +
+        `• Sıradaki Yayın Saati: ${nextRun}\n` +
+        `• Hazır Klip Paketleri: ${queueCount} adet\n` +
+        `• Keşfedilen Adaylar: ${candidatesCount} adet\n` +
+        `• Toplam Üretilen Klip: ${totalGen} adet\n` +
+        `• 12 Ajanlı Masa: Tüm birimler (Scout, Director, QA, Sound, Cliffhanger) emirlerine hazır!`;
+
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: statusText,
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'done',
+        actionTaken: 'status_report',
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: `📊 Stüdyo raporu hazır patron! Otopilot: ${apState.isRunning ? 'Aktif' : 'Beklemede'}, ${queueCount} paket hazır bekliyor.`,
+        mood: 'excited',
+      });
+      return replyMsg;
+    }
+
+    // 6. Intent: Open Studio Settings / Brand Safety
+    if (
+      lower.includes('ayar') ||
+      lower.includes('kanal güvenliği') ||
+      lower.includes('filtre') ||
+      lower.includes('güvenlik') ||
+      lower.includes('yasaklı kelimeler') ||
+      lower.includes('siyah liste')
+    ) {
+      if (this.onOpenModal) this.onOpenModal('settings');
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: '⚙️ Stüdyo & Kanal Güvenliği ayarları ekranınıza getirildi! Yapay zeka modelleri, kelime filtreleri (+18, siyaset, terör vb.) ve çıktı tercihlerini buradan yönetebilirsiniz.',
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'done',
+        actionTaken: 'open_settings',
+        action: {
+          label: '⚙️ Ayarları Aç',
+          action: 'open_settings',
+        },
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: '⚙️ Ayarlar ve Kanal Güvenliği panelini açtım patron!',
+        mood: 'idle',
+      });
+      return replyMsg;
+    }
+
+    // 7. Intent: Stop Autopilot Engine
+    if (
+      lower.includes('otopilot') &&
+      (lower.includes('durdur') || lower.includes('kapat') || lower.includes('pasif') || lower.includes('iptal'))
+    ) {
+      this.autopilotService.stopScheduler();
+      const replyMsg: CopilotMessage = {
+        id: `asst_${Date.now()}`,
+        sender: 'assistant',
+        text: '⏸️ 7/24 Otopilot zamanlayıcısı durduruldu patron! Arka planda otomatik arama yapılmayacak, istediğinde tekrar başlatabilirsin.',
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'done',
+        actionTaken: 'stop_autopilot',
+      };
+      this.emitMessage(replyMsg);
+      this.emitSpeech({
+        message: '⏸️ Otopilot durduruldu patron, manuel kontroldesin.',
+        mood: 'idle',
+      });
+      return replyMsg;
+    }
+
+    // 8. Intent: Open Autopilot Modal
     if (lower.includes('otopilot') && (lower.includes('aç') || lower.includes('panel') || lower.includes('göster') || lower.includes('ekran'))) {
       if (this.onOpenModal) this.onOpenModal('autopilot');
       const replyMsg: CopilotMessage = {
@@ -79,6 +277,10 @@ export class CopilotService {
         timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
         status: 'done',
         actionTaken: 'open_autopilot',
+        action: {
+          label: '⚡ Otopilot Panelini Aç',
+          action: 'open_autopilot',
+        },
       };
       this.emitMessage(replyMsg);
       this.emitSpeech({
@@ -88,7 +290,7 @@ export class CopilotService {
       return replyMsg;
     }
 
-    // 3. Intent: Start 7/24 Autopilot Engine
+    // 9. Intent: Start 7/24 Autopilot Engine
     if (lower.includes('otopilot') && (lower.includes('başlat') || lower.includes('aktif') || lower.includes('çalıştır'))) {
       this.autopilotService.startScheduler();
       const replyMsg: CopilotMessage = {
@@ -98,6 +300,10 @@ export class CopilotService {
         timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
         status: 'done',
         actionTaken: 'start_autopilot',
+        action: {
+          label: '⚡ Otopilot Panelini Gör',
+          action: 'open_autopilot',
+        },
       };
       this.emitMessage(replyMsg);
       this.emitSpeech({
@@ -107,7 +313,7 @@ export class CopilotService {
       return replyMsg;
     }
 
-    // 4. Intent Analysis: Video Search & Production (e.g. "röportaj videosu en az 3milyon izlenmesi olsun bul hazır et")
+    // 10. Intent Analysis: Video Search & Production (e.g. "röportaj videosu en az 3milyon izlenmesi olsun bul hazır et")
     if (
       lower.includes('bul') ||
       lower.includes('hazır et') ||
@@ -120,12 +326,12 @@ export class CopilotService {
       return this.handleFindAndProduceIntent(text, lower);
     }
 
-    // 5. Intent: Daily Batch (e.g. "günlük 3 klip yap", "parti üret")
+    // 11. Intent: Daily Batch (e.g. "günlük 3 klip yap", "parti üret")
     if (lower.includes('günlük') || lower.includes('3 klip') || lower.includes('parti')) {
       return this.handleBatchIntent();
     }
 
-    // 6. Intent: Open Agency Room
+    // 12. Intent: Open Agency Room
     if (lower.includes('ajans masası') || lower.includes('masayı aç') || lower.includes('ofis') || lower.includes('oda') || lower.includes('ajans')) {
       if (this.onOpenModal) this.onOpenModal('agency');
       const replyMsg: CopilotMessage = {
@@ -135,6 +341,10 @@ export class CopilotService {
         timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
         status: 'done',
         actionTaken: 'open_agency_room',
+        action: {
+          label: '🏢 Ajans Masasını Gör',
+          action: 'open_agency',
+        },
       };
       this.emitMessage(replyMsg);
       this.emitSpeech({
@@ -144,7 +354,7 @@ export class CopilotService {
       return replyMsg;
     }
 
-    // 7. Fallback Chat / Advice via Local Ollama
+    // 13. Fallback Chat / Advice via Local Ollama
     return this.handleGeneralConversation(text);
   }
 

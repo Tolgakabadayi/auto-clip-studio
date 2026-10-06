@@ -65,6 +65,7 @@ interface AgencyRoomModalProps {
   systemHealth?: SystemHealth | null;
   isStandalone?: boolean;
   onSelectPitch?: (pitch: CuratedPitchCandidate) => void;
+  initialShowPitchDeck?: boolean;
 }
 
 export interface AgentOfficeNode {
@@ -353,6 +354,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   systemHealth,
   isStandalone = false,
   onSelectPitch,
+  initialShowPitchDeck = false,
 }) => {
   const [selectedAgentRole, setSelectedAgentRole] = useState<AgencyRole | null>(null);
   const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
@@ -372,6 +374,18 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
     minSourceDurationSeconds: 60,
   });
   const [isSavingSeriesSettings, setIsSavingSeriesSettings] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen && initialShowPitchDeck) {
+      setShowPitchDeck(true);
+    }
+  }, [isOpen, initialShowPitchDeck]);
+
+  useEffect(() => {
+    if (curatedPitches.length === 0 && autopilotState?.candidates && autopilotState.candidates.length > 0) {
+      setCuratedPitches(autopilotState.candidates as any);
+    }
+  }, [autopilotState?.candidates, curatedPitches.length]);
 
   useEffect(() => {
     if (!window.electronAPI?.onAgencyPitchesReady) return;
@@ -1792,7 +1806,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
             )}
 
             {/* 🎯 CURATED PITCH DECK MODAL (AJANSIN SEÇTİĞİ VİRAL ADAYLAR SUNUM MASASI) */}
-            {showPitchDeck && curatedPitches.length > 0 && (
+            {showPitchDeck && (
               <div className="absolute inset-0 bg-dark-950/90 backdrop-blur-xl z-50 flex items-center justify-center p-6 animate-fadeIn">
                 <div className="bg-dark-900 border border-purple-500/40 rounded-3xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl shadow-purple-950/60 overflow-hidden">
                   {/* Pitch Deck Header */}
@@ -1824,8 +1838,9 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                     </button>
                   </div>
 
-                  {/* Pitch Candidates Grid */}
-                  <div className="p-6 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                  {/* Pitch Candidates Grid or Empty State */}
+                  {curatedPitches.length > 0 ? (
+                    <div className="p-6 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                     {curatedPitches.map((pitch, index) => {
                       const scoreColor =
                         pitch.viralityScore >= 92
@@ -1933,6 +1948,29 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                       );
                     })}
                   </div>
+                  ) : (
+                    <div className="p-12 flex flex-col items-center justify-center text-center space-y-4 flex-1">
+                      <div className="w-16 h-16 rounded-3xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-3xl shadow-inner">
+                        🎯
+                      </div>
+                      <div className="max-w-md space-y-1.5">
+                        <h4 className="text-base font-black text-white">Henüz Taranmış Viral Aday Yok</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          12 Ajanlı Stratejik Keşif Toplantısı başlatıldığında Scout, Trend Hunter ve Sentinel YouTube ağını tarayarak en yüksek potansiyelli telifsiz videoları bu masaya getirecek.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowPitchDeck(false);
+                          if (onRunAgency) onRunAgency();
+                        }}
+                        className="py-2.5 px-6 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 transition-all flex items-center gap-2"
+                      >
+                        <Play className="w-4 h-4 fill-white" />
+                        <span>🚀 Stratejik Keşif Toplantısı Başlat</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Pitch Deck Bottom Bar */}
                   <div className="px-6 py-3 border-t border-dark-750 bg-dark-850 flex items-center justify-between text-xs text-slate-400 shrink-0">

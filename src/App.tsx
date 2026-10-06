@@ -11,6 +11,7 @@ import { AgencyRoomModal } from './components/AgencyRoomModal';
 import { AutopilotModal } from './components/AutopilotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { OperationSummaryModal, LatestOperationResult } from './components/OperationSummaryModal';
+import { CopilotWidget } from './components/CopilotWidget';
 import {
   VideoMetadata,
   ViralClip,
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
   const [agencyMessages, setAgencyMessages] = useState<AgencyMessage[]>([]);
   const [agencyAgents, setAgencyAgents] = useState<AgencyAgentConfig[]>([]);
   const [isAgencyModalOpen, setIsAgencyModalOpen] = useState<boolean>(false);
+  const [agencyInitialShowPitchDeck, setAgencyInitialShowPitchDeck] = useState<boolean>(false);
   const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [showSummaryModal, setShowSummaryModal] = useState<boolean>(false);
@@ -209,11 +211,35 @@ export const App: React.FC = () => {
       });
 
       const unregisterDock = window.electronAPI?.onDockTriggerFeature?.((feat: string) => {
-        if (feat === 'agency') setIsAgencyModalOpen(true);
-        if (feat === 'autopilot') setIsAutopilotModalOpen(true);
-        if (feat === 'terminal') setLogsPosition('bottom');
-        if (feat === 'settings') setIsSettingsModalOpen(true);
-        if (feat === 'new_video') handleAutonomousDockNewVideoRef.current?.();
+        if (feat === 'pitches') {
+          setAgencyInitialShowPitchDeck(true);
+          setIsAgencyModalOpen(true);
+        } else if (feat === 'agency') {
+          setAgencyInitialShowPitchDeck(false);
+          setIsAgencyModalOpen(true);
+        } else if (feat === 'autopilot') {
+          setIsAutopilotModalOpen(true);
+        } else if (feat === 'terminal') {
+          setLogsPosition('bottom');
+        } else if (feat === 'settings') {
+          setIsSettingsModalOpen(true);
+        } else if (feat === 'new_video') {
+          handleAutonomousDockNewVideoRef.current?.();
+        }
+      });
+
+      const unregisterCopilotModal = window.electronAPI?.onCopilotOpenModal?.((modal: string) => {
+        if (modal === 'pitches') {
+          setAgencyInitialShowPitchDeck(true);
+          setIsAgencyModalOpen(true);
+        } else if (modal === 'agency') {
+          setAgencyInitialShowPitchDeck(false);
+          setIsAgencyModalOpen(true);
+        } else if (modal === 'autopilot') {
+          setIsAutopilotModalOpen(true);
+        } else if (modal === 'settings') {
+          setIsSettingsModalOpen(true);
+        }
       });
 
       // Synchronize initial clips with permanent Upload Registry
@@ -272,6 +298,7 @@ export const App: React.FC = () => {
         if (unregisterAgencyMsg) unregisterAgencyMsg();
         if (unregisterAutopilot) unregisterAutopilot();
         if (unregisterDock) unregisterDock();
+        if (unregisterCopilotModal) unregisterCopilotModal();
         if (unregisterClipUploaded) unregisterClipUploaded();
       };
     }
@@ -834,7 +861,11 @@ export const App: React.FC = () => {
       {/* Autonomous Agency HQ Room Modal */}
       <AgencyRoomModal
         isOpen={isAgencyModalOpen}
-        onClose={() => setIsAgencyModalOpen(false)}
+        onClose={() => {
+          setIsAgencyModalOpen(false);
+          setAgencyInitialShowPitchDeck(false);
+        }}
+        initialShowPitchDeck={agencyInitialShowPitchDeck}
         messages={agencyMessages}
         onClearMessages={() => setAgencyMessages([])}
         agents={agencyAgents}
@@ -910,6 +941,26 @@ export const App: React.FC = () => {
         onClearTerminalAndAgency={handleClearTerminalAndAgency}
         onOpenFolder={handleOpenFolder}
         onPreviewClip={(clip) => setPreviewClip(clip)}
+      />
+
+      {/* 🤖 Interactive Copilot AI Robot Assistant (NOVA) */}
+      <CopilotWidget
+        pipelineProgress={pipelineProgress}
+        autopilotState={autopilotState}
+        agencyMessages={agencyMessages}
+        onOpenAgencyRoom={() => {
+          setAgencyInitialShowPitchDeck(false);
+          setIsAgencyModalOpen(true);
+        }}
+        onOpenPitches={() => {
+          setAgencyInitialShowPitchDeck(true);
+          setIsAgencyModalOpen(true);
+        }}
+        onOpenAutopilot={() => setIsAutopilotModalOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onResetError={handleClearTerminalAndAgency}
+        onStartDiscoveryMeeting={handleRunAgencyBrainstorm}
+        onDownloadYouTube={(url) => handleDownloadYouTube(url, false)}
       />
     </div>
   );

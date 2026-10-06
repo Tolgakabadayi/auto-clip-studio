@@ -231,6 +231,73 @@ copilotService.onOpenModal = (modal) => {
     mainWindow.webContents.send('copilot:open-modal', modal);
   }
 };
+copilotService.onTriggerMeeting = async (options?: { niche?: string; keyword?: string }) => {
+  const apSettings = autopilotService.getSettings();
+  if (apSettings.brandSafetyConfig) {
+    agencyService.setBrandSafetyConfig(apSettings.brandSafetyConfig);
+  }
+  const niche = options?.niche || apSettings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri';
+  const keyword = options?.keyword || apSettings.customKeyword || undefined;
+
+  const result = await agencyService.runStrategicDiscoveryMeeting({
+    niche,
+    keyword,
+    minViewCount: apSettings.minViewCount,
+    onMessage: (msg) => broadcastToWindows('agency:message', msg),
+    onProgress: (p) => broadcastToWindows('agency:progress', p),
+    onLog: (l) => broadcastToWindows('pipeline:log', l),
+  });
+
+  broadcastToWindows('agency:pitches-ready', result.candidates);
+
+  const candidateCount = result.candidates?.length || 0;
+  copilotService.emitSpeech({
+    message: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla tamamlandı patron! Scout, Trend Hunter ve Sentinel masaya tam ${candidateCount} adet viral adayı getirdi. Hemen inceleyip seçmek için aşağıdaki butona tıkla!`,
+    mood: 'success',
+    action: {
+      label: '🎯 Viral Adayları İncele & Seç',
+      action: 'open_pitches',
+      payload: { count: candidateCount },
+    },
+  });
+
+  return result;
+};
+copilotService.onDownloadVideo = async (url: string) => {
+  const ffmpegDir = path.dirname(ffmpegService.getBinaryPath());
+  broadcastToWindows('pipeline:progress', {
+    step: 'downloading_youtube',
+    percent: 10,
+    message: 'YouTube videosu indiriliyor...',
+  });
+  const downloadedPath = await youtubeService.downloadVideo({
+    url,
+    ffmpegDir,
+    quality: '1080p',
+    onProgress: (p, msg, telemetry) => {
+      broadcastToWindows('pipeline:progress', {
+        step: 'downloading_youtube',
+        percent: p,
+        message: msg,
+        downloadTelemetry: telemetry,
+      });
+    },
+    onLog: (msg) => broadcastToWindows('pipeline:log', msg),
+  });
+
+  const metadata = await ffmpegService.probeVideo(downloadedPath);
+  activeVideoPath = downloadedPath;
+  broadcastToWindows('pipeline:progress', {
+    step: 'completed',
+    percent: 100,
+    message: 'Video başarıyla indirildi ve hazır!',
+  });
+  copilotService.emitSpeech({
+    message: `🎬 Video başarıyla indirildi patron! 2. Aşamaya geçtin. Klip ayarlarını belirleyebilirsin.`,
+    mood: 'success',
+  });
+  return metadata;
+};
 
 // State cache strictly isolated per video path
 let activeTranscript: TranscriptResult | null = null;
@@ -1171,6 +1238,31 @@ ipcMain.handle('agency:start-discovery-meeting', async (_event, payload?: { nich
   // Broadcast curated candidate pitches to all windows (main + external war room)
   broadcastToWindows('agency:pitches-ready', result.candidates);
 
+  const candidateCount = result.candidates?.length || 0;
+  copilotService.emitSpeech({
+    message: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla tamamlandı patron! Scout, Trend Hunter ve Sentinel masaya tam ${candidateCount} adet viral adayı sundu. Sonuçları incelemek için aşağıdaki butona tıkla!`,
+    mood: 'success',
+    action: {
+      label: '🎯 Viral Adayları İncele & Seç',
+      action: 'open_pitches',
+      payload: { count: candidateCount }
+    }
+  });
+
+  copilotService.emitMessage({
+    id: `asst_meeting_${Date.now()}`,
+    sender: 'assistant',
+    text: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla sonuçlandı!\n\nMasadaki 12 uzman ajan ${candidateCount} adet telifsiz viral video belirledi. Sonuçları açıp dilediğin videoyu kurguya gönderebilirsin.`,
+    timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+    status: 'done',
+    actionTaken: 'meeting_completed',
+    action: {
+      label: '🎯 Viral Adayları İncele & Seç',
+      action: 'open_pitches',
+      payload: { count: candidateCount }
+    }
+  });
+
   return result;
 });
 
@@ -1247,6 +1339,53 @@ ipcMain.handle('copilot:get-messages', () => {
   return copilotService.getMessages();
 });
 
+ipcMain.handle('copilot:trigger-action', async (_event, action: any) => {
+  if (!action || !action.action) return { success: false };
+  if (action.action === 'open_pitches') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('copilot:open-modal', 'pitches');
+    }
+    return { success: true };
+  }
+  if (action.action === 'start_meeting') {
+    if (copilotService.onTriggerMeeting) {
+      copilotService.onTriggerMeeting().catch(console.error);
+    }
+    return { success: true };
+  }
+  if (action.action === 'open_agency') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('copilot:open-modal', 'agency');
+    }
+    return { success: true };
+  }
+  if (action.action === 'open_autopilot') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('copilot:open-modal', 'autopilot');
+    }
+    return { success: true };
+  }
+  if (action.action === 'open_settings') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('copilot:open-modal', 'settings');
+    }
+    return { success: true };
+  }
+  return { success: true };
+});
+
 // ==========================================
 // 🪟 WINDOWS DESKTOP DOCKER (NOVA TOP ISLAND)
 // ==========================================
@@ -1295,7 +1434,7 @@ ipcMain.handle('dock:restore-main-window', () => {
   mainWindow.focus();
 });
 
-ipcMain.handle('dock:open-feature', (_event, feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings') => {
+ipcMain.handle('dock:open-feature', (_event, feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings' | 'pitches') => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();

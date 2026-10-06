@@ -82,6 +82,28 @@ export const DesktopDock: React.FC = () => {
     };
   }, []);
 
+  // Mode: 'ambient' vs 'active_notification'
+  const [dockMode, setDockMode] = useState<'ambient' | 'active_notification'>('ambient');
+  const [ambientTipIdx, setAmbientTipIdx] = useState(0);
+  const decayTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const ambientTips = [
+    '💡 İpucu: "Toplantı başlat" de, 12 ajanla en viral CC videoları keşfedelim.',
+    '🎯 İpucu: "Röportaj videosu bul 3M+" de, telifsiz kaynakları getireyim.',
+    '⚡ 7/24 Otopilot: Günün altın saatlerinde otonom yayın yapmaya hazır.',
+    '🛡️ Kanal Güvenliği: Siyasi propaganda, bölücü terör ve +18 filtreleri devrede.',
+    '📊 Stüdyo Durumu: Whisper AI ve Ollama modelleri emirlerini bekliyor.',
+  ];
+
+  // Rotate ambient tips every 16 seconds when in ambient mode
+  useEffect(() => {
+    if (dockMode !== 'ambient') return;
+    const interval = setInterval(() => {
+      setAmbientTipIdx((prev) => (prev + 1) % ambientTips.length);
+    }, 16000);
+    return () => clearInterval(interval);
+  }, [dockMode, ambientTips.length]);
+
   // Listen for IPC events
   useEffect(() => {
     if (window.electronAPI?.autopilotGetState) {
@@ -90,13 +112,29 @@ export const DesktopDock: React.FC = () => {
 
     const unregSpeech = window.electronAPI?.onCopilotSpeech?.((speech: CopilotSpeech) => {
       setCurrentSpeech(speech);
+      setDockMode('active_notification');
       if (!isMuted && speech.message) {
         novaVoice.speak(speech.message);
       }
+
+      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
+      const timeout = speech.action?.action === 'open_pitches' ? 35000 : 12000;
+      decayTimerRef.current = setTimeout(() => {
+        setDockMode('ambient');
+      }, timeout);
     });
 
     const unregProgress = window.electronAPI?.onPipelineProgress?.((prog: PipelineProgress) => {
       setPipelineProgress(prog);
+      if (prog.step === 'idle' || prog.step === 'completed') {
+        if (!decayTimerRef.current) {
+          decayTimerRef.current = setTimeout(() => {
+            setDockMode('ambient');
+          }, 8000);
+        }
+      } else {
+        setDockMode('active_notification');
+      }
     });
 
     const unregAutopilot = window.electronAPI?.onAutopilotState?.((state: AutopilotState) => {
@@ -206,10 +244,31 @@ export const DesktopDock: React.FC = () => {
     }
   };
 
-  const handleOpenFeature = (feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings', e?: React.MouseEvent) => {
+  const handleOpenFeature = (feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings' | 'pitches', e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (window.electronAPI?.dockOpenFeature) {
       window.electronAPI.dockOpenFeature(feature);
+    }
+  };
+
+  const handleExecuteAction = (action?: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!action) return;
+    if (action.action === 'open_pitches') {
+      handleOpenFeature('pitches');
+    } else if (action.action === 'open_agency') {
+      handleOpenFeature('agency');
+    } else if (action.action === 'open_autopilot') {
+      handleOpenFeature('autopilot');
+    } else if (action.action === 'open_settings') {
+      handleOpenFeature('settings');
+    } else if (action.action === 'start_meeting') {
+      if (window.electronAPI?.startDiscoveryMeeting) {
+        window.electronAPI.startDiscoveryMeeting();
+      }
+    }
+    if (window.electronAPI?.copilotTriggerAction) {
+      window.electronAPI.copilotTriggerAction(action);
     }
   };
 
@@ -271,6 +330,12 @@ export const DesktopDock: React.FC = () => {
     }
     if (autopilotState?.isBusy) {
       return `🤖 [Otopilot: ${autopilotState.activeAgent || 'Ekibi'}] ${autopilotState.currentAction}`;
+    }
+    if (currentSpeech.action) {
+      return `${currentSpeech.action.label} • Tıkla & İncele`;
+    }
+    if (dockMode === 'ambient') {
+      return ambientTips[ambientTipIdx] || currentSpeech.message;
     }
     return currentSpeech.message;
   })();
@@ -614,8 +679,20 @@ export const DesktopDock: React.FC = () => {
                     </div>
                   )}
                   <p className="text-xs text-slate-100 leading-snug line-clamp-2">
-                    {currentSpeech.message}
+                    {dockMode === 'ambient' ? ambientTips[ambientTipIdx] : currentSpeech.message}
                   </p>
+                  {currentSpeech.action && (
+                    <div className="mt-2 pt-1.5 border-t border-dark-750/80 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={(e) => handleExecuteAction(currentSpeech.action, e)}
+                        className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-[11px] flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all animate-bounce"
+                      >
+                        <Play className="w-3 h-3 fill-slate-950" />
+                        <span>{currentSpeech.action.label}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 

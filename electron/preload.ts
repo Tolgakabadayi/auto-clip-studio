@@ -88,17 +88,18 @@ export const electronAPI = {
     ipcRenderer.on('copilot:speech', subscription);
     return () => ipcRenderer.removeListener('copilot:speech', subscription);
   },
-  onCopilotOpenModal: (callback: (modal: 'agency' | 'autopilot') => void) => {
+  onCopilotOpenModal: (callback: (modal: 'agency' | 'autopilot' | 'settings' | 'pitches') => void) => {
     const subscription = (_event: any, value: any) => callback(value);
     ipcRenderer.on('copilot:open-modal', subscription);
     return () => ipcRenderer.removeListener('copilot:open-modal', subscription);
   },
+  copilotTriggerAction: (action: any) => ipcRenderer.invoke('copilot:trigger-action', action),
 
   // 🪟 Windows Desktop Docker (NOVA Top Dock)
   dockSetExpanded: (isExpanded: boolean) => ipcRenderer.invoke('dock:set-expanded', isExpanded),
   dockToggleMainWindow: () => ipcRenderer.invoke('dock:toggle-main-window'),
   dockRestoreMainWindow: () => ipcRenderer.invoke('dock:restore-main-window'),
-  dockOpenFeature: (feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings') => ipcRenderer.invoke('dock:open-feature', feature),
+  dockOpenFeature: (feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings' | 'pitches') => ipcRenderer.invoke('dock:open-feature', feature),
   dockClose: () => ipcRenderer.invoke('dock:close'),
   dockShow: () => ipcRenderer.invoke('dock:show'),
   dockToggle: () => ipcRenderer.invoke('dock:toggle'),

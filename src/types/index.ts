@@ -218,6 +218,15 @@ export interface AgencyProgressEvent {
   activeAgent?: AgencyRole;
 }
 
+export interface AgencyMeetingState {
+  isRunning: boolean;
+  phase?: string;
+  percent?: number;
+  message?: string;
+  activeAgent?: AgencyRole;
+  candidates?: CuratedPitchCandidate[];
+}
+
 export interface AutopilotSettings {
   enabled: boolean;
   selectedNiche: string;
@@ -541,5 +550,19 @@ export interface YouTubeAnalyticsData {
   lastUpdated: string;
 }
 
+export interface DockerSizeConfig {
+  botSize: number;
+  dockWidth: number;
+  dockHeight: number;
+  panelWidth: number;
+  panelHeight: number;
+}
 
+export const DEFAULT_DOCKER_SIZE_CONFIG: DockerSizeConfig = {
+  botSize: 54,
+  dockWidth: 460,
+  dockHeight: 56,
+  panelWidth: 740,
+  panelHeight: 290,
+};
 

@@ -65,6 +65,11 @@ const electronAPI = {
     ipcRenderer.on('agency:progress', subscription);
     return () => ipcRenderer.removeListener('agency:progress', subscription);
   },
+  onAgencyMeetingState: (callback) => {
+    const subscription = (_event, value) => callback(value);
+    ipcRenderer.on('agency:meeting-state', subscription);
+    return () => ipcRenderer.removeListener('agency:meeting-state', subscription);
+  },
   onAutopilotState: (callback) => {
     const subscription = (_event, value) => callback(value);
     ipcRenderer.on('autopilot:state', subscription);
@@ -89,9 +94,14 @@ const electronAPI = {
     ipcRenderer.on('copilot:open-modal', subscription);
     return () => ipcRenderer.removeListener('copilot:open-modal', subscription);
   },
+  copilotTriggerAction: (action) => ipcRenderer.invoke('copilot:trigger-action', action),
 
   // 🪟 Windows Desktop Docker (NOVA Top Dock)
-  dockSetExpanded: (isExpanded) => ipcRenderer.invoke('dock:set-expanded', isExpanded),
+  dockSetExpanded: (payload) => ipcRenderer.invoke('dock:set-expanded', payload),
+  dockSetSize: (size) => ipcRenderer.invoke('dock:set-size', size),
+  dockGetBounds: () => ipcRenderer.invoke('dock:get-bounds'),
+  dockMove: (pos) => ipcRenderer.invoke('dock:move', pos),
+  dockSetBounds: (bounds) => ipcRenderer.invoke('dock:set-bounds', bounds),
   dockToggleMainWindow: () => ipcRenderer.invoke('dock:toggle-main-window'),
   dockRestoreMainWindow: () => ipcRenderer.invoke('dock:restore-main-window'),
   dockOpenFeature: (feature) => ipcRenderer.invoke('dock:open-feature', feature),

@@ -374,6 +374,47 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
     minSourceDurationSeconds: 60,
   });
   const [isSavingSeriesSettings, setIsSavingSeriesSettings] = useState<boolean>(false);
+  const [isMeetingRunning, setIsMeetingRunning] = useState<boolean>(false);
+  const [meetingPhase, setMeetingPhase] = useState<string>('');
+  const [meetingPercent, setMeetingPercent] = useState<number>(0);
+  const [meetingMessage, setMeetingMessage] = useState<string>('');
+  const [meetingActiveAgent, setMeetingActiveAgent] = useState<AgencyRole | null>(null);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const unsubState = window.electronAPI.onAgencyMeetingState?.((st: any) => {
+      if (st) {
+        setIsMeetingRunning(!!st.isRunning);
+        if (st.phase) setMeetingPhase(st.phase);
+        if (typeof st.percent === 'number') setMeetingPercent(st.percent);
+        if (st.message) setMeetingMessage(st.message);
+        if (st.activeAgent) setMeetingActiveAgent(st.activeAgent as AgencyRole);
+      }
+    });
+
+    const unsubProgress = window.electronAPI.onAgencyProgress?.((p: any) => {
+      if (p) {
+        setIsMeetingRunning(p.percent < 100);
+        if (p.phase) setMeetingPhase(p.phase);
+        if (typeof p.percent === 'number') setMeetingPercent(p.percent);
+        if (p.message) setMeetingMessage(p.message);
+        if (p.activeAgent) setMeetingActiveAgent(p.activeAgent as AgencyRole);
+      }
+    });
+
+    const unsubMsg = window.electronAPI.onAgencyMessage?.((msg: AgencyMessage) => {
+      if (msg?.role) {
+        setMeetingActiveAgent(msg.role);
+      }
+    });
+
+    return () => {
+      unsubState?.();
+      unsubProgress?.();
+      unsubMsg?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen && initialShowPitchDeck) {
@@ -581,7 +622,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   // Live second-by-second stopwatch timer
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  const isAnyActive = isProcessing || !!autopilotState?.isBusy;
+  const isAnyActive = isProcessing || isMeetingRunning || !!autopilotState?.isBusy;
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
@@ -600,6 +641,10 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
   // Determine which agent is actively in the spotlight
   const activeAgentRole = useMemo<AgencyRole | null>(() => {
     if (!isAnyActive) return null;
+
+    if (isMeetingRunning && meetingActiveAgent) {
+      return meetingActiveAgent;
+    }
 
     if (autopilotState?.isBusy) {
       if (autopilotState.activeAgent) return autopilotState.activeAgent;
@@ -626,19 +671,25 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
     }
 
     return 'ceo';
-  }, [isAnyActive, autopilotState, pipelineProgress, messages]);
+  }, [isAnyActive, isMeetingRunning, meetingActiveAgent, autopilotState, pipelineProgress, isProcessing, messages]);
 
   const activePercent = useMemo(() => {
+    if (isMeetingRunning && meetingPercent > 0) {
+      return meetingPercent;
+    }
     if (autopilotState?.isBusy && autopilotState.activeProgress?.percent !== undefined) {
       return autopilotState.activeProgress.percent;
     }
-    if (pipelineProgress && pipelineProgress.percent !== undefined) {
+    if (pipelineProgress && pipelineProgress.percent !== undefined && pipelineProgress.percent > 0) {
       return pipelineProgress.percent;
     }
     return isAnyActive ? 50 : 0;
-  }, [isAnyActive, autopilotState, pipelineProgress]);
+  }, [isAnyActive, isMeetingRunning, meetingPercent, autopilotState, pipelineProgress]);
 
   const activeWorkMessage = useMemo(() => {
+    if (isMeetingRunning && meetingMessage) {
+      return meetingMessage;
+    }
     if (autopilotState?.isBusy && autopilotState.activeProgress?.message) {
       return autopilotState.activeProgress.message;
     }
@@ -650,7 +701,7 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
       return node?.workDescription || 'Yapay zeka çıkarımı yapılıyor...';
     }
     return 'Tüm 12 departman hazır bekliyor.';
-  }, [autopilotState, pipelineProgress, activeAgentRole, officeAgents]);
+  }, [isMeetingRunning, meetingMessage, autopilotState, pipelineProgress, activeAgentRole, officeAgents]);
 
   if (!isOpen) return null;
 
@@ -722,34 +773,6 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
               </button>
             </div>
 
-            {/* YouTube Atlas & Scoreboard Trigger Button */}
-            <button
-              onClick={() => {
-                setIsYouTubeAnalyticsOpen(true);
-                setIsSentinelConsoleOpen(false);
-                setIsCliffhangerConsoleOpen(false);
-              }}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 text-xs font-bold transition-all shadow-md shadow-rose-950/40"
-              title="YouTube Atlas Partner canlı kanal analitiği ve Shorts performansını açar"
-            >
-              <TrendingUp className="w-4 h-4 text-rose-400" />
-              <span>🔴 YouTube Atlas</span>
-            </button>
-
-            {/* Sentinel Guard Audit Console Trigger Button */}
-            <button
-              onClick={() => {
-                setIsSentinelConsoleOpen(true);
-                setIsYouTubeAnalyticsOpen(false);
-                setIsCliffhangerConsoleOpen(false);
-              }}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 text-xs font-bold transition-all shadow-md shadow-indigo-950/40"
-              title="Sentinel Guard güvenlik, telif ve bütünlük teftiş konsolunu açar"
-            >
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>🛡️ Sentinel Teftiş</span>
-            </button>
-
             {/* Cliffhanger Qwen Series Console Trigger Button */}
             <button
               onClick={() => {
@@ -797,11 +820,24 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
               <button
                 id="btn-start-meeting"
                 onClick={onRunAgency}
-                disabled={isProcessing}
-                className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-brand-purple hover:from-amber-600 hover:to-purple-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-all disabled:opacity-40"
+                disabled={isProcessing || isMeetingRunning}
+                className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-md ${
+                  isProcessing || isMeetingRunning
+                    ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-purple-700 animate-pulse border border-amber-400/40 shadow-amber-500/30'
+                    : 'bg-gradient-to-r from-amber-500 via-orange-500 to-brand-purple hover:from-amber-600 hover:to-purple-600 shadow-amber-500/20 disabled:opacity-40'
+                }`}
               >
-                <Sparkles className={`w-3.5 h-3.5 text-amber-200 ${isProcessing ? 'animate-spin' : ''}`} />
-                <span>{isProcessing ? 'Ajans Çalışıyor...' : 'Toplantıyı Başlat'}</span>
+                {isProcessing || isMeetingRunning ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 text-amber-200 animate-spin" />
+                    <span>Toplantı Sürüyor (%{activePercent})...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                    <span>Toplantıyı Başlat</span>
+                  </>
+                )}
               </button>
             )}
 
@@ -832,7 +868,8 @@ export const AgencyRoomModal: React.FC<AgencyRoomModalProps> = ({
                 activeWorkMessage={activeWorkMessage}
                 activePercent={activePercent}
                 elapsedSeconds={elapsedSeconds}
-                isProcessing={isProcessing}
+                isProcessing={isAnyActive}
+                isMeetingActive={isMeetingRunning}
                 onSelectAgent={(role) => handleSelectRole(role)}
                 onRunMeeting={onRunAgency}
                 hasVideo={hasVideo}

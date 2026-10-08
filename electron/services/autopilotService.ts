@@ -540,6 +540,19 @@ export class AutopilotService {
             continue;
           }
 
+          // 4.5. LEGAL LLAMA CC-BY AUDIT PRE-CHECK: Eliminates non-compliant candidates BEFORE downloading
+          const auditResult = await this.agencyService.auditCopyrightLicense({
+            title: probe.title || item.title,
+            channel: probe.channel || item.uploader || '',
+            url: videoUrl,
+            license: probe.license || (probe.isCreativeCommons ? 'Creative Commons Attribution' : 'Standard YouTube License'),
+            description: probe.description || item.description || '',
+          });
+          if (!auditResult.approved) {
+            this.emitLog(`🛡️ [Telif Kalkanı: REDDEDİLDİ] "${probe.title}" Legal Llama ön denetiminde elendi: ${auditResult.notes}`);
+            continue;
+          }
+
           // Format duration mm:ss or hh:mm:ss
           const effectiveDuration = probe.duration || duration;
 
@@ -612,7 +625,17 @@ export class AutopilotService {
     dayLabel: string;
     timestamp: number;
   } {
-    return this.calculateNextSlotAfter(Date.now() + 10 * 60 * 1000);
+    // Proactively target the next chronological slot if it has no ready package yet
+    const upcoming = this.getNextUpcomingSlot();
+    if (!upcoming.hasReadyPackage) {
+      return {
+        slotTime: upcoming.slotTime,
+        scheduledFor: upcoming.scheduledFor,
+        dayLabel: upcoming.dayLabel,
+        timestamp: upcoming.timestamp,
+      };
+    }
+    return this.calculateNextSlotAfter(Date.now() + 5 * 60 * 1000);
   }
 
   /**
@@ -682,7 +705,13 @@ export class AutopilotService {
    */
   public calculateSequentialSlots(
     count: number,
-    minIntervalMinutes: number = 55
+    minIntervalMinutes: number = 55,
+    initialSlot?: {
+      slotTime: string;
+      scheduledFor: string;
+      dayLabel: string;
+      timestamp: number;
+    }
   ): Array<{
     slotTime: string;
     scheduledFor: string;
@@ -696,9 +725,12 @@ export class AutopilotService {
       timestamp: number;
     }> = [];
 
-    let currentMinTimestamp = Date.now() + 10 * 60 * 1000;
+    const firstSlot = initialSlot || this.calculateNextSlotAfter(Date.now() + 5 * 60 * 1000);
+    results.push(firstSlot);
 
-    for (let i = 0; i < count; i++) {
+    let currentMinTimestamp = firstSlot.timestamp + minIntervalMinutes * 60 * 1000;
+
+    for (let i = 1; i < count; i++) {
       const slot = this.calculateNextSlotAfter(currentMinTimestamp);
       results.push(slot);
       currentMinTimestamp = slot.timestamp + minIntervalMinutes * 60 * 1000;
@@ -809,7 +841,14 @@ export class AutopilotService {
   public async runAutopilotCycle(
     customCandidate?: CCVideoCandidate,
     batchCurrent: number = 1,
-    batchTotal: number = 1
+    batchTotal: number = 1,
+    providedSlot?: {
+      slotTime: string;
+      scheduledFor: string;
+      dayLabel: string;
+      timestamp: number;
+      minutesRemaining?: number;
+    }
   ): Promise<ScheduledClipPackage | null> {
     if (this.isBusy) {
       this.emitLog('⚠ Otopilot zaten aktif bir döngü yürütüyor. Yeni istek sıraya alınamaz.');
@@ -818,67 +857,116 @@ export class AutopilotService {
 
     this.isBusy = true;
     this.state.isBusy = true;
-    this.updateProgress(1, 'Viral CC Keşfi', 5, 'Creative Commons videosu aranıyor ve seçiliyor...', batchCurrent, batchTotal);
 
     try {
-      let targetVideo: CCVideoCandidate | null = customCandidate || null;
+      // 1. Determine Target Slot and Announce Timing Watchdog
+      const targetSlot = providedSlot || this.getNextUpcomingSlot();
+      const currentRemaining = Math.max(0, Math.round((targetSlot.timestamp - Date.now()) / (60 * 1000)));
 
-      if (!targetVideo) {
-        this.state.activeAgent = 'trend_hunter';
-        this.updateProgress(1, 'Viral CC Keşfi', 10, 'Hunter Gemma viral trend videolarını tarıyor...', batchCurrent, batchTotal);
+      this.emitLog(
+        `📅 [Planner Qwen: Zamanlama Planı] Hedef Yayın Yuvası: ${targetSlot.slotTime} (${targetSlot.dayLabel}) | Yayına Kalan Süre: ${currentRemaining} dk.`
+      );
 
-        let searchCandidates = await this.searchCreativeCommons(
-          this.settings.selectedNiche,
-          this.settings.customKeyword,
-          8
-        );
+      this.updateProgress(1, 'Viral CC Keşfi', 5, 'Creative Commons videosu aranıyor ve seçiliyor...', batchCurrent, batchTotal);
 
-        if (!searchCandidates || searchCandidates.length === 0) {
-          this.emitLog('[Otopilot:Avcı] Alternatif genel arama terimleri taranıyor...');
-          searchCandidates = await this.searchCreativeCommons('Podcast & Röportaj', '', 8);
-        }
+      // If custom candidate provided, seed the pool with it
+      let candidatePool: CCVideoCandidate[] = customCandidate ? [customCandidate] : [];
+      let successfulPackage: ScheduledClipPackage | null = null;
+      let attempt = 0;
+      const maxAttempts = 5;
 
-        // Priority 1: Fresh channel that has not been recently used
-        targetVideo = searchCandidates?.find(
-          (c) =>
-            !this.processedVideoIds.has(c.id) &&
-            !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title }) &&
-            !this.isChannelRecentlyUsed(c.channel)
-        ) || null;
+      while (attempt < maxAttempts && !successfulPackage) {
+        attempt++;
 
-        // Priority 2: Any unprocessed video from candidates
-        if (!targetVideo) {
-          targetVideo = searchCandidates?.find(
+        // If candidate pool is empty, search YouTube Creative Commons
+        if (candidatePool.length === 0) {
+          this.state.activeAgent = 'trend_hunter';
+          this.updateProgress(
+            1,
+            'Viral CC Keşfi',
+            10,
+            `Hunter Gemma uygun CC videolarını tarıyor (Deneme ${attempt}/${maxAttempts})...`,
+            batchCurrent,
+            batchTotal
+          );
+
+          let searchCandidates: CCVideoCandidate[] = [];
+          if (attempt === 1) {
+            searchCandidates = await this.searchCreativeCommons(
+              this.settings.selectedNiche,
+              this.settings.customKeyword,
+              10
+            );
+          } else if (attempt === 2) {
+            this.emitLog('[Otopilot:Avcı] Güvenli alternatif arama terimleri taranıyor (Podcast & Röportaj)...');
+            searchCandidates = await this.searchCreativeCommons('Podcast & Röportaj', '', 10);
+          } else if (attempt === 3) {
+            this.emitLog('[Otopilot:Avcı] Taze hikaye ve röportaj havuzu taranıyor...');
+            searchCandidates = await this.searchCreativeCommons('Röportaj Gerçek Hayat Hikayeleri', '', 12);
+          } else {
+            this.emitLog('[Otopilot:Avcı] Geniş kapsamlı CC video havuzu taranıyor...');
+            searchCandidates = await this.searchCreativeCommons('Motivasyon Konuşmaları ve Başarı Hikayeleri', '', 12);
+          }
+
+          // Filter out already processed and uploaded videos
+          const validCandidates = (searchCandidates || []).filter(
             (c) =>
               !this.processedVideoIds.has(c.id) &&
               !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
-          ) || null;
+          );
+
+          // Prioritize channels not recently used
+          validCandidates.sort((a, b) => {
+            const aRecent = this.isChannelRecentlyUsed(a.channel) ? 1 : 0;
+            const bRecent = this.isChannelRecentlyUsed(b.channel) ? 1 : 0;
+            return aRecent - bRecent;
+          });
+
+          candidatePool = validCandidates;
         }
 
-        if (!targetVideo) {
-          this.emitLog('[Otopilot:Avcı] Daha önce işlenmemiş taze videolar için genişletilmiş arama yapılıyor...');
-          const deepCandidates = await this.searchCreativeCommons('Röportaj Gerçek Hayat Hikayeleri', '', 12);
-          targetVideo =
-            deepCandidates?.find(
-              (c) =>
-                !this.processedVideoIds.has(c.id) &&
-                !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title }) &&
-                !this.isChannelRecentlyUsed(c.channel)
-            ) ||
-            deepCandidates?.find(
-              (c) =>
-                !this.processedVideoIds.has(c.id) &&
-                !this.uploadRegistryService?.isUploaded({ sourceVideoId: c.id, title: c.title })
-            ) ||
-            null;
+        if (candidatePool.length === 0) {
+          if (attempt >= maxAttempts) {
+            throw new Error('Creative Commons aramasında uygun ve güvenli video bulunamadı. Lütfen daha sonra tekrar deneyin.');
+          }
+          continue;
+        }
+
+        const candidateToTry = candidatePool.shift()!;
+        this.emitLog(
+          `🔍 [Otopilot:Aday Seçildi] [Deneme ${attempt}/${maxAttempts}] "${candidateToTry.title}" (${candidateToTry.channel}) test ediliyor...`
+        );
+
+        try {
+          successfulPackage = await this.executeClipProduction(
+            candidateToTry,
+            batchCurrent,
+            batchTotal,
+            targetSlot
+          );
+        } catch (candidateErr: any) {
+          const remMin = Math.max(0, Math.round((targetSlot.timestamp - Date.now()) / (60 * 1000)));
+          this.emitLog(
+            `⚠️ [Otopilot:Aday Elendi] "${candidateToTry.title}" (${candidateToTry.channel}) elendi: ${candidateErr.message}`
+          );
+          this.emitLog(
+            `🔄 [Planner Qwen: Zamanlama Kurtarma] Yayın saati (${targetSlot.slotTime}) kaçırılmaması için derhal sıradaki güvenli adaya geçiliyor! (Yayına Kalan Süre: ${remMin} dk)`
+          );
+
+          // Mark this candidate as processed so it won't be retried
+          this.processedVideoIds.add(candidateToTry.id);
+          this.savePersistence();
+
+          if (attempt >= maxAttempts) {
+            throw new Error(`Tüm adaylar güvenlik/telif denetiminde elendi (${maxAttempts} deneme). Son Hata: ${candidateErr.message}`);
+          }
         }
       }
 
-      if (!targetVideo) {
-        throw new Error('Creative Commons aramasında video bulunamadı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.');
-      }
+      // Check if any package is due for immediate publishing (slot time reached during production)
+      await this.publishDuePackages(true);
 
-      return await this.executeClipProduction(targetVideo, batchCurrent, batchTotal);
+      return successfulPackage;
     } catch (err: any) {
       this.emitLog(`✗ [Otopilot Hata]: ${err.message}`);
       this.state.currentAction = `Hata: ${err.message}`;
@@ -983,68 +1071,78 @@ export class AutopilotService {
   private async executeClipProduction(
     targetVideo: CCVideoCandidate,
     batchCurrent: number = 1,
-    batchTotal: number = 1
+    batchTotal: number = 1,
+    targetSlot?: {
+      slotTime: string;
+      scheduledFor: string;
+      dayLabel: string;
+      timestamp: number;
+    }
   ): Promise<ScheduledClipPackage> {
     this.processedVideoIds.add(targetVideo.id);
     this.savePersistence();
     this.emitLog(`✓ Kaynak CC Video Seçildi: "${targetVideo.title}" (${targetVideo.channel})`);
 
-    // STEP 2: LEGAL LLAMA - Audit Creative Commons license & generate attribution
-    this.state.activeAgent = 'copyright_auditor';
-    this.updateProgress(2, 'Telif Denetimi', 20, 'Legal Llama CC-BY telif ve lisans denetimi yapıyor...', batchCurrent, batchTotal);
+    let rawVideoPath: string | null = null;
+    let wavPath: string | null = null;
 
-    const auditResult = await this.agencyService.auditCopyrightLicense(
-      {
-        title: targetVideo.title,
-        channel: targetVideo.channel,
-        url: targetVideo.url,
-        license: targetVideo.license,
-      },
-      {
-        onMessage: this.onAgencyMessage,
-        onLog: this.onLog,
-      }
-    );
+    try {
+      // STEP 2: LEGAL LLAMA - Audit Creative Commons license & generate attribution
+      this.state.activeAgent = 'copyright_auditor';
+      this.updateProgress(2, 'Telif Denetimi', 20, 'Legal Llama CC-BY telif ve lisans denetimi yapıyor...', batchCurrent, batchTotal);
 
-    if (!auditResult.approved) {
-      this.emitLog(`❌ [Telif Kalkanı Reddi]: "${targetVideo.title}" elendi: ${auditResult.notes}`);
-      throw new Error(`Telif Kalkanı Reddi: ${auditResult.notes}`);
-    }
-
-    // STEP 3: DOWNLOAD VIDEO
-    this.state.activeAgent = 'trend_hunter';
-    this.updateProgress(3, 'Video İndirme', 25, 'YouTube CC videosu yüksek kalitede indiriliyor...', batchCurrent, batchTotal);
-    this.emitLog(`[YouTube] İndiriliyor: ${targetVideo.url}`);
-
-    const rawVideoPath = await this.youtubeService.downloadVideo({
-      url: targetVideo.url,
-      outputDir: path.join(this.storageDir, 'Source_Videos'),
-      onLog: (l) => this.emitLog(l),
-      onProgress: (pct, msg) => {
-        this.updateProgress(
-          3,
-          'Video İndirme',
-          25 + Math.round(pct * 0.15),
-          `Video indiriliyor: %${pct} - ${msg}`,
-          batchCurrent,
-          batchTotal
-        );
-        if (this.onProgress) {
-          this.onProgress({
-            phase: 'hunting',
-            percent: Math.round(pct * 0.3),
-            message: `Video indiriliyor: %${pct} - ${msg}`,
-            activeAgent: 'trend_hunter',
-          });
+      const auditResult = await this.agencyService.auditCopyrightLicense(
+        {
+          title: targetVideo.title,
+          channel: targetVideo.channel,
+          url: targetVideo.url,
+          license: targetVideo.license,
+        },
+        {
+          onMessage: this.onAgencyMessage,
+          onLog: this.onLog,
         }
-      },
-    });
+      );
 
-    // STEP 4: WHISPER GPU TRANSCRIBE
-    this.state.activeAgent = 'scout';
-    this.updateProgress(4, 'Whisper Deşifre', 42, 'Videodan ses dalgaları ayıklanıyor (16kHz WAV)...', batchCurrent, batchTotal);
-    const wavPath = path.join(path.dirname(rawVideoPath), `${path.basename(rawVideoPath, path.extname(rawVideoPath))}_audio.wav`);
-    await this.ffmpegService.extractAudio(rawVideoPath, wavPath);
+      if (!auditResult.approved) {
+        this.emitLog(`❌ [Telif Kalkanı Reddi]: "${targetVideo.title}" elendi: ${auditResult.notes}`);
+        throw new Error(`Telif Kalkanı Reddi: ${auditResult.notes}`);
+      }
+
+      // STEP 3: DOWNLOAD VIDEO
+      this.state.activeAgent = 'trend_hunter';
+      this.updateProgress(3, 'Video İndirme', 25, 'YouTube CC videosu yüksek kalitede indiriliyor...', batchCurrent, batchTotal);
+      this.emitLog(`[YouTube] İndiriliyor: ${targetVideo.url}`);
+
+      rawVideoPath = await this.youtubeService.downloadVideo({
+        url: targetVideo.url,
+        outputDir: path.join(this.storageDir, 'Source_Videos'),
+        onLog: (l) => this.emitLog(l),
+        onProgress: (pct, msg) => {
+          this.updateProgress(
+            3,
+            'Video İndirme',
+            25 + Math.round(pct * 0.15),
+            `Video indiriliyor: %${pct} - ${msg}`,
+            batchCurrent,
+            batchTotal
+          );
+          if (this.onProgress) {
+            this.onProgress({
+              phase: 'hunting',
+              percent: Math.round(pct * 0.3),
+              message: `Video indiriliyor: %${pct} - ${msg}`,
+              activeAgent: 'trend_hunter',
+            });
+          }
+        },
+      });
+
+      // STEP 4: WHISPER GPU TRANSCRIBE
+      this.state.activeAgent = 'scout';
+      this.updateProgress(4, 'Whisper Deşifre', 42, 'Videodan ses dalgaları ayıklanıyor (16kHz WAV)...', batchCurrent, batchTotal);
+      wavPath = path.join(path.dirname(rawVideoPath), `${path.basename(rawVideoPath, path.extname(rawVideoPath))}_audio.wav`);
+      await this.ffmpegService.extractAudio(rawVideoPath, wavPath);
 
     this.updateProgress(4, 'Whisper Deşifre', 45, 'Whisper modeli çalışıyor, kelime zaman damgaları çıkarılıyor...', batchCurrent, batchTotal);
     this.emitLog(`[Whisper] Ses analiz ediliyor: ${path.basename(rawVideoPath)}`);
@@ -1106,7 +1204,8 @@ export class AutopilotService {
 
       const sequentialSlots = this.calculateSequentialSlots(
         seriesClips.length,
-        this.settings.seriesIntervalMinutes || 55
+        this.settings.seriesIntervalMinutes || 55,
+        targetSlot
       );
       const seriesPackages: ScheduledClipPackage[] = [];
       const seriesGroupId = `grp_${Date.now()}`;
@@ -1269,7 +1368,7 @@ export class AutopilotService {
     this.state.activeAgent = 'ceo';
     this.updateProgress(5, 'Ajans Analizi', 62, 'Yapay Zeka Ajansı viral kesitleri ve kancaları üretiyor...', batchCurrent, batchTotal);
 
-    const nextSlot = this.calculateNextSlot();
+    const nextSlot = targetSlot || this.calculateNextSlot();
 
     const producedClips = await this.agencyService.runAgencyPipeline(transcript, {
       clipCount: this.settings.clipsPerVideo || 1,
@@ -1519,6 +1618,19 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
     this.emitLog(`🎉 [Otopilot] Başarıyla paketlendi ve arşivlendi: "${bestClip.title}" (${targetVideo.channel}) -> ${nextSlot.dayLabel}`);
 
     return readyPackage;
+    } catch (err: any) {
+      if (wavPath && fs.existsSync(wavPath)) {
+        try {
+          fs.unlinkSync(wavPath);
+        } catch {}
+      }
+      if (rawVideoPath && fs.existsSync(rawVideoPath)) {
+        try {
+          fs.unlinkSync(rawVideoPath);
+        } catch {}
+      }
+      throw err;
+    }
   }
 
   /**
@@ -1591,8 +1703,8 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
   /**
    * Publishes any packages whose scheduled time has arrived or passed
    */
-  private async publishDuePackages(): Promise<void> {
-    if (this.isBusy) return;
+  private async publishDuePackages(ignoreBusyCheck: boolean = false): Promise<void> {
+    if (this.isBusy && !ignoreBusyCheck) return;
 
     const now = Date.now();
     // Find packages ready to publish: status is 'ready' or 'scheduled'
@@ -1648,6 +1760,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
 
       // 4. Execute upload
       try {
+        this.emitLog(`🚀 [Planner Qwen: Anında Yayınlama] Yayın saati (${pkg.slotTime}) geldi! "${pkg.title}" YouTube Shorts'a hemen yayınlanıyor...`);
         await this.publishPackageToYouTube(pkg);
       } catch (err: any) {
         this.emitLog(`❌ [Otopilot:Yayın Hatası] "${pkg.title}" YouTube'a yüklenemedi: ${err.message}`);
@@ -1676,7 +1789,7 @@ Lisans: Creative Commons Attribution (CC-BY - Yeniden kullanıma izin verilir)
       );
 
       try {
-        await this.runAutopilotCycle();
+        await this.runAutopilotCycle(undefined, 1, 1, upcoming);
       } catch (err: any) {
         this.emitLog(`❌ [Otopilot] Otomatik klip üretimi hatası: ${err.message}`);
       }

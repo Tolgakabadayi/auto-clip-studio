@@ -20,6 +20,7 @@ interface Office3DViewportProps {
   activePercent?: number;
   elapsedSeconds?: number;
   isProcessing?: boolean;
+  isMeetingActive?: boolean;
   onSelectAgent?: (role: AgencyRole) => void;
   onRunMeeting?: () => void;
   hasVideo?: boolean;
@@ -32,6 +33,7 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
   activePercent = 0,
   elapsedSeconds = 0,
   isProcessing = false,
+  isMeetingActive = false,
   onSelectAgent,
   onRunMeeting,
   hasVideo = true,
@@ -120,28 +122,55 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
     );
   }, [activeAgentRole]);
 
+  // 1.5 Handle synchronized Meeting Mode when triggered by Agency, Nova or Dock
+  useEffect(() => {
+    if (!office3dRef.current) return;
+    if (isMeetingActive) {
+      setMeetingMode(true);
+      office3dRef.current.startMeeting();
+      setActiveCount(12);
+    } else if (!isProcessing && meetingMode) {
+      setMeetingMode(false);
+      office3dRef.current.endMeeting();
+      setActiveCount(0);
+    }
+  }, [isMeetingActive, isProcessing]);
+
   // 2. React to active agent turn changes (Individual worker spotlight with flashing light & reaction)
   useEffect(() => {
     if (!office3dRef.current) return;
 
-    if (activeAgentInfo) {
-      if (!meetingMode) {
-        // Set all other agents to idle, and active one to working
+    if (meetingMode || isMeetingActive) {
+      if (activeAgentInfo) {
+        // In meeting: active speaker stands/talks while other agents stay seated at meeting table
         AGENTS_3D_ROSTER.forEach((a) => {
-          if (a.id !== activeAgentInfo.id) {
-            office3dRef.current?.setAgentStatus(a.id, 'idle');
+          if (a.id === activeAgentInfo.id) {
+            office3dRef.current?.setAgentStatus(a.id, 'working');
+          } else {
+            office3dRef.current?.setAgentStatus(a.id, 'meeting');
           }
         });
-        office3dRef.current.setAgentStatus(activeAgentInfo.id, 'working');
-        setActiveCount(1);
+        setActiveCount(12);
       }
-    } else if (!isProcessing && !meetingMode) {
+      return;
+    }
+
+    if (activeAgentInfo) {
+      // Set all other agents to idle, and active one to working
+      AGENTS_3D_ROSTER.forEach((a) => {
+        if (a.id !== activeAgentInfo.id) {
+          office3dRef.current?.setAgentStatus(a.id, 'idle');
+        }
+      });
+      office3dRef.current.setAgentStatus(activeAgentInfo.id, 'working');
+      setActiveCount(1);
+    } else if (!isProcessing) {
       AGENTS_3D_ROSTER.forEach((a) => {
         office3dRef.current?.setAgentStatus(a.id, 'idle');
       });
       setActiveCount(0);
     }
-  }, [activeAgentInfo, isProcessing, meetingMode]);
+  }, [activeAgentInfo, isProcessing, meetingMode, isMeetingActive]);
 
   // Format timer
   const formatTimer = (sec: number) => {
@@ -372,14 +401,16 @@ export const Office3DViewport: React.FC<Office3DViewportProps> = ({
           <Users className="w-4 h-4 text-brand-purple" />
           <span className="text-slate-300 font-medium">Ajan Durumu:</span>
           <span className={`font-bold font-mono px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${
-            meetingMode
-              ? 'bg-purple-950/80 border-purple-600/70 text-purple-300'
+            meetingMode || isMeetingActive
+              ? 'bg-purple-950/80 border-purple-600/70 text-purple-300 animate-pulse'
               : activeAgentInfo
               ? 'bg-amber-950/80 border-amber-500/70 text-amber-300 shadow-md shadow-amber-500/20 animate-pulse'
               : 'bg-dark-850 border-dark-700 text-emerald-400'
           }`}>
-            {meetingMode
-              ? '🤝 12/12 Toplantıda'
+            {meetingMode || isMeetingActive
+              ? activeAgentInfo
+                ? `🤝 12/12 Toplantıda (${activeAgentInfo.name} Konuşuyor)`
+                : '🤝 12/12 Toplantıda'
               : activeAgentInfo
               ? `🔥 ${activeAgentInfo.name} (Çalışıyor)`
               : '12 Hazır (Beklemede)'}

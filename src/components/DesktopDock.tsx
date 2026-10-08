@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sparkles,
   Zap,
@@ -20,18 +20,33 @@ import {
   Scissors,
   Eye,
   Type,
-  Video
+  Video,
+  MessageSquare,
+  Cpu,
+  Bot,
+  User,
+  AlertCircle,
+  Clock,
+  Radio,
+  SlidersHorizontal,
+  Activity
 } from 'lucide-react';
 import {
   CopilotSpeech,
+  CopilotMessage,
+  CopilotSpeechAction,
   PipelineProgress,
-  AutopilotState
+  AutopilotState,
+  BrandSafetyConfig,
+  DockerSizeConfig,
+  DEFAULT_DOCKER_SIZE_CONFIG
 } from '../types';
 import { novaVoice } from '../utils/novaVoice';
 import { NovaInteractiveAvatar } from './NovaInteractiveAvatar';
 
 export const DesktopDock: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'cockpit' | 'chat'>('cockpit');
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     try {
       return localStorage.getItem('autoclip_copilot_muted') === 'true';
@@ -40,6 +55,25 @@ export const DesktopDock: React.FC = () => {
     }
   });
 
+  // Docker dynamic sizing configuration from Settings
+  const [dockerSize, setDockerSize] = useState<DockerSizeConfig>(() => {
+    try {
+      const raw = localStorage.getItem('autoclip_docker_size_config');
+      if (raw) return { ...DEFAULT_DOCKER_SIZE_CONFIG, ...JSON.parse(raw) };
+    } catch {}
+    return DEFAULT_DOCKER_SIZE_CONFIG;
+  });
+
+  // User custom dragged floating position for idle robot
+  const [idlePos] = useState<{ x?: number; y?: number }>(() => {
+    try {
+      const saved = localStorage.getItem('autoclip_nova_idle_pos');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+  const idlePosRef = useRef<{ x?: number; y?: number }>(idlePos);
+
   const [isSpeakingVoice, setIsSpeakingVoice] = useState(false);
   const [currentSpeech, setCurrentSpeech] = useState<CopilotSpeech>({
     message: '👋 Selam patron! Masaüstü komuta adasındayım. Bir emrin var mı?',
@@ -47,113 +81,259 @@ export const DesktopDock: React.FC = () => {
   });
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
   const [autopilotState, setAutopilotState] = useState<AutopilotState | null>(null);
+  const [apSettings, setApSettings] = useState<any>(null);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isStartingMeeting, setIsStartingMeeting] = useState(false);
 
-  // Subscribe to Nova Voice state
+  // Chat message stream
+  const [messages, setMessages] = useState<CopilotMessage[]>([
+    {
+      id: 'init_welcome',
+      sender: 'assistant',
+      text: 'Selam patron! Ben AutoClip AI Stüdyo Baş Danışmanın NOVA. YouTube Creative Commons avcısı, 14 ajanlı Ajans Masası ve 7/24 Otopilot emrinde. Bana dilediğin komutu verebilirsin!',
+      timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+      status: 'done',
+    },
+  ]);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInputFocusedRef = useRef(false);
+
+  // Subscribe to Nova Voice speech activity
   useEffect(() => {
     return novaVoice.subscribe((speaking) => {
       setIsSpeakingVoice(speaking);
     });
   }, []);
 
-  // Eye Animation States
-  const [isBlinking, setIsBlinking] = useState(false);
-  const [gazeDirection, setGazeDirection] = useState<'center' | 'left' | 'right'>('center');
-  const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isInputFocusedRef = useRef(false);
+  // Fetch real settings for dynamic Brand Safety reflection
+  const fetchSettings = () => {
+    if (window.electronAPI?.autopilotGetSettings) {
+      window.electronAPI.autopilotGetSettings().then(setApSettings).catch(console.error);
+    }
+  };
 
-  // Periodically blink eyes every 3.5 to 5.5 seconds
   useEffect(() => {
-    const blinkInterval = setInterval(() => {
-      setIsBlinking(true);
-      setTimeout(() => setIsBlinking(false), 160);
-    }, 4000);
+    fetchSettings();
+  }, [isExpanded]);
 
-    const gazeInterval = setInterval(() => {
-      const dirs: ('center' | 'left' | 'right')[] = ['center', 'left', 'right', 'center'];
-      const nextDir = dirs[Math.floor(Math.random() * dirs.length)];
-      setGazeDirection(nextDir);
-    }, 3200);
+  // Compute actual active brand safety rules from real configuration
+  const activeSafetyText = useMemo(() => {
+    const cfg: BrandSafetyConfig | undefined = apSettings?.brandSafetyConfig;
+    if (!cfg) return 'Standart Koruma';
+    const active: string[] = [];
+    if (cfg.blockPolitical) active.push('Siyasi');
+    if (cfg.blockTerrorAndSeparatist) active.push('Terör/Bölücü');
+    if (cfg.blockAdultAndNSFW) active.push('+18');
+    if (cfg.blockViolenceAndGore) active.push('Şiddet');
+    if (cfg.blockSchoolAndLectures) active.push('Ders/Eğitim');
+    if (cfg.blockCommercialMCNs) active.push('MCN/Müzik');
+    if (cfg.customBlacklistWords && cfg.customBlacklistWords.length > 0) {
+      active.push(`+${cfg.customBlacklistWords.length} Özel Kelime`);
+    }
 
-    return () => {
-      clearInterval(blinkInterval);
-      clearInterval(gazeInterval);
+    if (active.length === 0) return 'Tüm Filtreler Kapalı (Serbest)';
+    return `${active.join(' • ')} Aktif`;
+  }, [apSettings?.brandSafetyConfig]);
+
+  const isBusy = (pipelineProgress && pipelineProgress.percent > 0 && pipelineProgress.percent < 100) ||
+    !!autopilotState?.isBusy ||
+    isStartingMeeting;
+
+  // Listen for dynamic size config changes from Settings Modal
+  useEffect(() => {
+    const handleSizeUpdated = (e: any) => {
+      if (e.detail) {
+        setDockerSize(e.detail);
+      } else {
+        try {
+          const raw = localStorage.getItem('autoclip_docker_size_config');
+          if (raw) setDockerSize({ ...DEFAULT_DOCKER_SIZE_CONFIG, ...JSON.parse(raw) });
+        } catch {}
+      }
     };
+    window.addEventListener('autoclip_docker_size_updated', handleSizeUpdated);
+    return () => window.removeEventListener('autoclip_docker_size_updated', handleSizeUpdated);
   }, []);
 
-  // Mode: 'ambient' vs 'active_notification'
-  const [dockMode, setDockMode] = useState<'ambient' | 'active_notification'>('ambient');
-  const [ambientTipIdx, setAmbientTipIdx] = useState(0);
-  const decayTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Robust window resizing helper that synchronizes with Electron main process
+  const updateWindowDimensions = async (
+    expanded: boolean,
+    tab: 'cockpit' | 'chat',
+    busy: boolean,
+    sizeCfg: DockerSizeConfig
+  ) => {
+    let targetWidth = sizeCfg.botSize + 16;
+    let targetHeight = sizeCfg.botSize + 16;
+    let targetX: number | undefined = undefined;
+    let targetY: number | undefined = undefined;
 
-  const ambientTips = [
-    '💡 İpucu: "Toplantı başlat" de, 12 ajanla en viral CC videoları keşfedelim.',
-    '🎯 İpucu: "Röportaj videosu bul 3M+" de, telifsiz kaynakları getireyim.',
-    '⚡ 7/24 Otopilot: Günün altın saatlerinde otonom yayın yapmaya hazır.',
-    '🛡️ Kanal Güvenliği: Siyasi propaganda, bölücü terör ve +18 filtreleri devrede.',
-    '📊 Stüdyo Durumu: Whisper AI ve Ollama modelleri emirlerini bekliyor.',
-  ];
-
-  // Rotate ambient tips every 16 seconds when in ambient mode
-  useEffect(() => {
-    if (dockMode !== 'ambient') return;
-    const interval = setInterval(() => {
-      setAmbientTipIdx((prev) => (prev + 1) % ambientTips.length);
-    }, 16000);
-    return () => clearInterval(interval);
-  }, [dockMode, ambientTips.length]);
-
-  // Listen for IPC events
-  useEffect(() => {
-    if (window.electronAPI?.autopilotGetState) {
-      window.electronAPI.autopilotGetState().then(setAutopilotState).catch(console.error);
-    }
-
-    const unregSpeech = window.electronAPI?.onCopilotSpeech?.((speech: CopilotSpeech) => {
-      setCurrentSpeech(speech);
-      setDockMode('active_notification');
-      if (!isMuted && speech.message) {
-        novaVoice.speak(speech.message);
-      }
-
-      if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
-      const timeout = speech.action?.action === 'open_pitches' ? 35000 : 12000;
-      decayTimerRef.current = setTimeout(() => {
-        setDockMode('ambient');
-      }, timeout);
-    });
-
-    const unregProgress = window.electronAPI?.onPipelineProgress?.((prog: PipelineProgress) => {
-      setPipelineProgress(prog);
-      if (prog.step === 'idle' || prog.step === 'completed') {
-        if (!decayTimerRef.current) {
-          decayTimerRef.current = setTimeout(() => {
-            setDockMode('ambient');
-          }, 8000);
-        }
+    if (!expanded) {
+      if (busy) {
+        targetWidth = sizeCfg.dockWidth;
+        targetHeight = sizeCfg.dockHeight;
+        // Snap to top-center!
+        targetX = undefined;
+        targetY = 10;
       } else {
-        setDockMode('active_notification');
+        targetWidth = sizeCfg.botSize + 16;
+        targetHeight = sizeCfg.botSize + 16;
+        // Restore custom dragged floating position if user moved Nova!
+        if (idlePosRef.current.x !== undefined && idlePosRef.current.y !== undefined) {
+          targetX = idlePosRef.current.x;
+          targetY = idlePosRef.current.y;
+        } else {
+          targetX = undefined;
+          targetY = 10;
+        }
       }
-    });
-
-    const unregAutopilot = window.electronAPI?.onAutopilotState?.((state: AutopilotState) => {
-      setAutopilotState(state);
-    });
-
-    return () => {
-      if (unregSpeech) unregSpeech();
-      if (unregProgress) unregProgress();
-      if (unregAutopilot) unregAutopilot();
-    };
-  }, [isMuted]);
-
-  // Expand / Collapse Handlers with Window Resizing
-  const handleSetExpanded = (expanded: boolean) => {
-    setIsExpanded(expanded);
-    if (window.electronAPI?.dockSetExpanded) {
-      window.electronAPI.dockSetExpanded(expanded);
+    } else {
+      targetWidth = sizeCfg.panelWidth;
+      targetHeight = tab === 'cockpit' ? sizeCfg.panelHeight : 520;
+      // Snap to top-center!
+      targetX = undefined;
+      targetY = 10;
     }
+
+    if (window.electronAPI?.dockSetSize) {
+      try {
+        await window.electronAPI.dockSetSize({
+          width: targetWidth,
+          height: targetHeight,
+          x: targetX,
+          y: targetY,
+        });
+      } catch (err) {
+        console.warn('[DesktopDock] dockSetSize error:', err);
+      }
+    }
+
+    if (window.electronAPI?.dockSetExpanded) {
+      try {
+        await window.electronAPI.dockSetExpanded({
+          isExpanded: expanded,
+          width: targetWidth,
+          height: targetHeight,
+          x: targetX,
+          y: targetY,
+        });
+      } catch (err) {
+        console.warn('[DesktopDock] dockSetExpanded error:', err);
+      }
+    }
+  };
+
+  // Synchronize window size whenever isExpanded, activeTab, isBusy or dockerSize changes
+  useEffect(() => {
+    updateWindowDimensions(isExpanded, activeTab, isBusy, dockerSize);
+  }, [isExpanded, activeTab, isBusy, dockerSize]);
+
+  // Mouse drag & drop state for idle floating robot
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ screenX: 0, screenY: 0, winX: 0, winY: 0 });
+  const hasMovedRef = useRef(false);
+
+  const handleIdleBotMouseDown = async (e: React.MouseEvent) => {
+    // Left click only for dragging and poking
+    if (e.button !== 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    hasMovedRef.current = false;
+    isDraggingRef.current = true;
+    dragStartRef.current.screenX = e.screenX;
+    dragStartRef.current.screenY = e.screenY;
+
+    let initialX = 0;
+    let initialY = 0;
+    if (window.electronAPI?.dockGetBounds) {
+      try {
+        const bounds = await window.electronAPI.dockGetBounds();
+        if (bounds) {
+          initialX = bounds.x;
+          initialY = bounds.y;
+        }
+      } catch {}
+    }
+    dragStartRef.current.winX = initialX;
+    dragStartRef.current.winY = initialY;
+
+    const handleMouseMove = (moveEvt: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = moveEvt.screenX - dragStartRef.current.screenX;
+      const dy = moveEvt.screenY - dragStartRef.current.screenY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMovedRef.current = true;
+      }
+
+      if (hasMovedRef.current && window.electronAPI?.dockMove) {
+        const newX = Math.round(dragStartRef.current.winX + dx);
+        const newY = Math.round(dragStartRef.current.winY + dy);
+        window.electronAPI.dockMove({ x: newX, y: newY });
+        idlePosRef.current = { x: newX, y: newY };
+        try {
+          localStorage.setItem('autoclip_nova_idle_pos', JSON.stringify({ x: newX, y: newY }));
+        } catch {}
+      }
+    };
+
+    const handleMouseUp = (_upEvt: MouseEvent) => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      // If mouse moved <= 3px, it was a clean LEFT CLICK: poke & speak reaction!
+      if (!hasMovedRef.current) {
+        handleIdleBotPoke();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleIdleBotPoke = () => {
+    if (!isMuted) {
+      const lines = [
+        'Efendim patron? Bir klip mi patlatıyoruz?',
+        'Buradayım patron! Kurgu ve keşif emrindeyim.',
+        'AutoClip Stüdyo hazır patron! 14 ajan masada.',
+        'Gözüm YouTube akışında patron, harika videolar bulacağız!',
+        'Selam patron! Bugün Shorts akışını sallamaya hazır mıyız?',
+        'Sistemler tam güç devrede patron!',
+      ];
+      const randomLine = lines[Math.floor(Math.random() * lines.length)];
+      novaVoice.speak(randomLine);
+      setCurrentSpeech({
+        message: randomLine,
+        mood: 'excited',
+      });
+      setTimeout(() => {
+        setCurrentSpeech((prev) => ({ ...prev, mood: 'idle' }));
+      }, 2500);
+    }
+  };
+
+  const handleIdleBotContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // SAĞ TIK: Komuta kokpitini aç!
+    handleSetExpanded(true, 'cockpit');
+  };
+
+  // Expand / Collapse Handlers
+  const handleSetExpanded = (expanded: boolean, tab?: 'cockpit' | 'chat') => {
+    if (tab) setActiveTab(tab);
+    setIsExpanded(expanded);
+  };
+
+  const handleTabChange = (tab: 'cockpit' | 'chat') => {
+    setActiveTab(tab);
+    if (!isExpanded) setIsExpanded(true);
   };
 
   const handleMouseEnter = () => {
@@ -161,18 +341,84 @@ export const DesktopDock: React.FC = () => {
       clearTimeout(collapseTimeoutRef.current);
       collapseTimeoutRef.current = null;
     }
-    if (!isExpanded) {
-      handleSetExpanded(true);
-    }
   };
 
   const handleMouseLeave = () => {
-    if (isInputFocusedRef.current) return;
+    if (isInputFocusedRef.current || activeTab === 'chat') return;
     if (collapseTimeoutRef.current) clearTimeout(collapseTimeoutRef.current);
     collapseTimeoutRef.current = setTimeout(() => {
       handleSetExpanded(false);
-    }, 700);
+    }, 2500);
   };
+
+  // Scroll chat to bottom on new messages
+  useEffect(() => {
+    if (activeTab === 'chat' && isExpanded) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, activeTab, isExpanded]);
+
+  // Listen for IPC events
+  useEffect(() => {
+    if (window.electronAPI?.autopilotGetState) {
+      window.electronAPI.autopilotGetState().then(setAutopilotState).catch(console.error);
+    }
+
+    if (window.electronAPI?.copilotGetMessages) {
+      window.electronAPI.copilotGetMessages().then((msgs: any) => {
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          setMessages(msgs);
+        }
+      }).catch(console.error);
+    }
+
+    const unregSpeech = window.electronAPI?.onCopilotSpeech?.((speech: CopilotSpeech) => {
+      setCurrentSpeech(speech);
+      if (!isMuted && speech.message) {
+        novaVoice.speak(speech.message);
+      }
+    });
+
+    const unregMessage = window.electronAPI?.onCopilotMessage?.((msg: CopilotMessage) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    });
+
+    const unregProgress = window.electronAPI?.onPipelineProgress?.((prog: PipelineProgress) => {
+      setPipelineProgress(prog);
+    });
+
+    const unregAutopilot = window.electronAPI?.onAutopilotState?.((state: AutopilotState) => {
+      setAutopilotState(state);
+    });
+
+    const unregMeetingState = window.electronAPI?.onAgencyMeetingState?.((st: any) => {
+      if (st) {
+        setIsStartingMeeting(!!st.isRunning);
+      }
+    });
+
+    const unregAgencyProg = window.electronAPI?.onAgencyProgress?.((p: any) => {
+      if (p) {
+        if (p.percent < 100) {
+          setIsStartingMeeting(true);
+        } else {
+          setIsStartingMeeting(false);
+        }
+      }
+    });
+
+    return () => {
+      if (unregSpeech) unregSpeech();
+      if (unregMessage) unregMessage();
+      if (unregProgress) unregProgress();
+      if (unregAutopilot) unregAutopilot();
+      if (unregMeetingState) unregMeetingState();
+      if (unregAgencyProg) unregAgencyProg();
+    };
+  }, [isMuted]);
 
   const toggleMute = (e?: React.MouseEvent) => {
     if (e) {
@@ -200,28 +446,53 @@ export const DesktopDock: React.FC = () => {
     }
   };
 
-  const handleSendCommand = async () => {
-    const text = inputPrompt.trim();
+  const handleSendCommand = async (customText?: string) => {
+    const text = (customText || inputPrompt).trim();
     if (!text || isSubmitting) return;
 
     setInputPrompt('');
     setIsSubmitting(true);
+
+    const userMsg: CopilotMessage = {
+      id: `usr_${Date.now()}`,
+      sender: 'user',
+      text,
+      timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
     try {
       if (window.electronAPI?.copilotSendCommand) {
         const result = await window.electronAPI.copilotSendCommand(text);
-        if (result && result.text && !isMuted) {
-          novaVoice.speak(result.text);
+        if (result) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === result.id)) return prev;
+            return [...prev, result];
+          });
+          if (result.text && !isMuted) {
+            novaVoice.speak(result.text);
+          }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('[DesktopDock] Command failed:', e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err_${Date.now()}`,
+          sender: 'assistant',
+          text: `⚠️ Komut işlenirken bir sorun oluştu: ${e.message}`,
+          timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+          status: 'error',
+        },
+      ]);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleToggleAutopilot = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleToggleAutopilot = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     try {
       if (autopilotState?.isRunning) {
         const next = await window.electronAPI?.autopilotStop?.();
@@ -235,15 +506,6 @@ export const DesktopDock: React.FC = () => {
     }
   };
 
-  const handleRunDailyBatch = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await window.electronAPI?.autopilotRunBatch?.(3);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleOpenFeature = (feature: 'agency' | 'autopilot' | 'terminal' | 'new_video' | 'settings' | 'pitches', e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (window.electronAPI?.dockOpenFeature) {
@@ -251,7 +513,7 @@ export const DesktopDock: React.FC = () => {
     }
   };
 
-  const handleExecuteAction = (action?: any, e?: React.MouseEvent) => {
+  const handleExecuteAction = (action?: CopilotSpeechAction, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!action) return;
     if (action.action === 'open_pitches') {
@@ -263,9 +525,7 @@ export const DesktopDock: React.FC = () => {
     } else if (action.action === 'open_settings') {
       handleOpenFeature('settings');
     } else if (action.action === 'start_meeting') {
-      if (window.electronAPI?.startDiscoveryMeeting) {
-        window.electronAPI.startDiscoveryMeeting();
-      }
+      handleStartMeeting();
     }
     if (window.electronAPI?.copilotTriggerAction) {
       window.electronAPI.copilotTriggerAction(action);
@@ -279,7 +539,41 @@ export const DesktopDock: React.FC = () => {
     }
   };
 
-  const isBusy = (pipelineProgress && pipelineProgress.percent > 0 && pipelineProgress.percent < 100) || !!autopilotState?.isBusy;
+  // 🎙️ 1-Click Discovery Meeting Trigger with immediate audio, visual feedback & War Room activation
+  const handleStartMeeting = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (isStartingMeeting) return;
+
+    setIsStartingMeeting(true);
+
+    // 1. Give instant high-priority audio & speech notification
+    const speechMsg = '🚀 14 Ajanlı Stratejik Keşif Toplantısı başlatıldı patron! Scout, Trend Hunter ve Sentinel masada YouTube ağını tarıyor...';
+    setCurrentSpeech({
+      message: speechMsg,
+      mood: 'excited',
+    });
+    if (!isMuted) {
+      novaVoice.speak(speechMsg);
+    }
+
+    // 2. Open the Agency Room / War Room in the main studio window
+    handleOpenFeature('agency');
+
+    // 3. Trigger strategic discovery meeting IPC
+    try {
+      if (window.electronAPI?.startDiscoveryMeeting) {
+        await window.electronAPI.startDiscoveryMeeting();
+      }
+    } catch (err: any) {
+      console.error('Meeting failed to start:', err);
+      setCurrentSpeech({
+        message: `⚠️ Toplantı sırasında sorun: ${err.message}`,
+        mood: 'alert',
+      });
+    } finally {
+      setIsStartingMeeting(false);
+    }
+  };
 
   // Determine active pipeline stage step (1 to 5)
   const getActiveStepIndex = (): number => {
@@ -312,9 +606,12 @@ export const DesktopDock: React.FC = () => {
   };
 
   const activeStep = getActiveStepIndex();
-  const activePercent = Math.max(5, pipelineProgress?.percent || autopilotState?.activeProgress?.percent || 35);
+  const activePercent = Math.max(5, pipelineProgress?.percent || autopilotState?.activeProgress?.percent || (isStartingMeeting ? 45 : 35));
 
   const activeStatusText = (() => {
+    if (isStartingMeeting) {
+      return '🎙️ 14 Ajan Toplantıda: YouTube Creative Commons taranıyor...';
+    }
     if (pipelineProgress?.step === 'downloading_youtube') {
       const tel = pipelineProgress.downloadTelemetry;
       const speed = tel?.speed ? ` • ${tel.speed}` : '';
@@ -331,22 +628,19 @@ export const DesktopDock: React.FC = () => {
     if (autopilotState?.isBusy) {
       return `🤖 [Otopilot: ${autopilotState.activeAgent || 'Ekibi'}] ${autopilotState.currentAction}`;
     }
-    if (currentSpeech.action) {
-      return `${currentSpeech.action.label} • Tıkla & İncele`;
-    }
-    if (dockMode === 'ambient') {
-      return ambientTips[ambientTipIdx] || currentSpeech.message;
-    }
     return currentSpeech.message;
   })();
 
   const liveNarration = (() => {
+    if (isStartingMeeting) {
+      return 'Patron, 14 uzman ajan masada toplandı! Scout Gemma telifsiz kaynakları, Sentinel kanal güvenliğini ve Hook Master viralliği analiz ediyor.';
+    }
     if (pipelineProgress?.step === 'downloading_youtube') {
       const tel = pipelineProgress.downloadTelemetry;
       return `Patron, YouTube videosunu indiriyorum! ${tel?.speed ? 'Hız: ' + tel.speed : ''} ${tel?.downloadedSize && tel?.totalSize ? '• ' + tel.downloadedSize + ' / ' + tel.totalSize : ''} ${tel?.eta ? '(Kalan: ' + tel.eta + ')' : ''}`;
     }
     if (pipelineProgress?.step === 'error' || pipelineProgress?.isError) {
-      return `Patron, YouTube indirme veya işlem sırasında bir hata oluştu: ${pipelineProgress.message}. Kırmızı alarm durumundayım!`;
+      return `Patron, işlem sırasında bir hata oluştu: ${pipelineProgress.message}. Kırmızı alarm durumundayım!`;
     }
     if (activeStep === 1) return 'Patron, şu anda Creative Commons kaynak videosunu indiriyor ve ses akışını hazırlıyorum.';
     if (activeStep === 2) return 'Whisper AI devrede! Konuşmadaki tüm cümleleri kelime kelime milisaniyelik zaman damgalarıyla deşifre ediyorum.';
@@ -364,558 +658,606 @@ export const DesktopDock: React.FC = () => {
     { id: 5, title: 'Altyazı & QA', icon: Sparkles },
   ];
 
+  const quickPrompts = [
+    { label: '🚀 Toplantı Başlat', cmd: 'toplantı başlat' },
+    { label: '🎯 Viral Adaylar', cmd: 'viral adayları göster' },
+    { label: '🎬 Video Bul (3M+)', cmd: 'röportaj videosu bul en az 3milyon izlenmesi olsun' },
+    { label: '⚡ Otopilot Paneli', cmd: 'otopilot panelini aç' },
+    { label: '📊 Durum Raporu', cmd: 'stüdyo durum raporu ver' },
+    { label: '⚙️ Güvenlik & Ayarlar', cmd: 'ayarları ve kanal güvenliğini aç' },
+  ];
+
   return (
     <div
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="w-full h-full flex items-center justify-center select-none text-slate-100 font-sans"
+      className="w-full h-full flex flex-col items-center justify-start select-none text-slate-100 font-sans overflow-hidden box-border"
     >
       {!isExpanded ? (
-        /* ======================================================== */
-        /* 1. COLLAPSED COMPACT SOLID CAPSULE PILL                  */
-        /* ======================================================== */
-        <div
-          onClick={() => handleSetExpanded(true)}
-          className="w-full max-w-[420px] h-[48px] px-3.5 py-1.5 rounded-full bg-[#070814] border-2 border-brand-purple/80 hover:border-brand-purple shadow-[0_10px_35px_rgba(0,0,0,0.95)] flex items-center justify-between cursor-pointer transition-all duration-300 group"
-        >
-          {/* Left: Cyber Robot Head Visor with Eyes */}
-          <div className="flex items-center space-x-2.5 shrink-0">
+        !isBusy ? (
+          /* ======================================================== */
+          /* 1A. IDLE STATE: FLOATING SLEEK NOVA BOT AVATAR           */
+          /* ======================================================== */
+          <div
+            onMouseDown={handleIdleBotMouseDown}
+            onContextMenu={handleIdleBotContextMenu}
+            draggable={false}
+            onDragStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              return false;
+            }}
+            style={{
+              width: dockerSize.botSize,
+              height: dockerSize.botSize,
+              userSelect: 'none',
+              ...({ WebkitUserDrag: 'none' } as any),
+            }}
+            className="relative rounded-full cursor-grab active:cursor-grabbing select-none shrink-0 transition-transform duration-150 hover:scale-105 active:scale-95"
+            title="NOVA AI: Sol tıkla etkileşime gir / konuş • Sağ tıkla kokpiti aç • Fareyle tut ve serbest taşı!"
+          >
+            {/* Living Interactive Nova Avatar (Pristine Circular Vector, matches reference photo) */}
             <NovaInteractiveAvatar
-              size="sm"
+              size={dockerSize.botSize}
               externalMood={currentSpeech.mood}
-              isBusy={isBusy}
+              isBusy={false}
               isSpeaking={isSpeakingVoice}
               enableVoiceReactions={!isMuted}
             />
-            <span className="text-[11px] font-black tracking-wider text-brand-cyan flex items-center gap-1 uppercase">
-              NOVA
-              <span className={`w-1.5 h-1.5 rounded-full ${isBusy ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
-            </span>
           </div>
+        ) : (
+          /* ======================================================== */
+          /* 1B. ACTIVE BUSY STATE: LIVE MARQUEE PILL                 */
+          /* ======================================================== */
+          <div
+            onClick={() => handleSetExpanded(true, 'cockpit')}
+            style={{
+              maxWidth: dockerSize.dockWidth,
+              height: dockerSize.dockHeight,
+            }}
+            className="w-full px-4 py-1.5 rounded-full bg-[#070814] border-2 border-brand-purple/80 hover:border-brand-purple shadow-[0_10px_35px_rgba(0,0,0,0.95)] flex items-center justify-between cursor-pointer transition-all duration-300 group shrink-0"
+          >
+            {/* Left: Avatar + Badge */}
+            <div className="flex items-center space-x-2 shrink-0">
+              <NovaInteractiveAvatar
+                size={Math.min(42, Math.max(30, dockerSize.dockHeight - 14))}
+                externalMood={currentSpeech.mood}
+                isBusy={true}
+                isSpeaking={isSpeakingVoice}
+                enableVoiceReactions={!isMuted}
+              />
+              <span className="text-[11px] font-black tracking-wider text-brand-cyan flex items-center gap-1 uppercase">
+                NOVA
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+              </span>
+            </div>
 
-          {/* Center: Live Marquee Status Text */}
-          <div className="flex-1 mx-3 overflow-hidden text-center">
-            <p className="text-[11px] text-slate-200 font-medium truncate group-hover:text-amber-300 transition-colors">
-              {activeStatusText}
-            </p>
-          </div>
+            {/* Center: Live Status Marquee */}
+            <div className="flex-1 mx-2.5 overflow-hidden text-center">
+              <p className="text-[11px] text-slate-200 font-medium truncate group-hover:text-amber-300 transition-colors">
+                {activeStatusText}
+              </p>
+            </div>
 
-          {/* Right: Micro Actions */}
-          <div className="flex items-center space-x-1.5 shrink-0">
-            <button
-              onClick={toggleMute}
-              className={`p-1 rounded-full transition-colors ${
-                isMuted ? 'text-rose-400 bg-rose-950/60' : 'text-slate-400 hover:text-white'
-              }`}
-              title={isMuted ? 'Sesi Aç' : 'Sessize Al'}
-            >
-              {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-            </button>
-            <ChevronDown className="w-4 h-4 text-brand-purple group-hover:text-brand-cyan transition-colors" />
+            {/* Right: Quick Action Controls */}
+            <div className="flex items-center space-x-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => handleSetExpanded(true, 'chat')}
+                className="p-1 rounded-full text-slate-400 hover:text-brand-cyan hover:bg-dark-800 transition-colors"
+                title="NOVA ile Sohbet Et"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={toggleMute}
+                className={`p-1 rounded-full transition-colors ${
+                  isMuted ? 'text-rose-400 bg-rose-950/60' : 'text-slate-400 hover:text-white'
+                }`}
+                title={isMuted ? 'Sesi Aç' : 'Sessize Al'}
+              >
+                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => handleSetExpanded(true, 'cockpit')}
+                className="p-1 rounded-full text-brand-purple group-hover:text-brand-cyan transition-colors"
+                title="Komuta Merkezini Aç"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        </div>
+        )
       ) : (
         /* ======================================================== */
-        /* 2. EXPANDED SOLID STUDIO COMMAND ISLAND                  */
+        /* 2. EXPANDED CYBER-PREMIUM STUDIO COCKPIT DOCK            */
         /* ======================================================== */
-        <div className="w-full max-w-[710px] h-[260px] p-4 rounded-3xl bg-[#070814] border-2 border-brand-purple/80 shadow-[0_15px_50px_rgba(0,0,0,0.98)] flex flex-col justify-between animate-fadeIn">
-          
-          {isBusy ? (
-            /* ---------------------------------------------------- */
-            /* CASE A: ACTIVE OPERATION -> SPLIT COCKPIT VIEW       */
-            /* Left: Large Robot Face | Right: Process Flow Tree    */
-            /* ---------------------------------------------------- */
-            <div className="w-full h-full flex gap-4 items-stretch">
-              
-              {/* Left Side: Large Prominent Cyber Robot Face */}
-              <div className="w-[185px] shrink-0 border-r border-dark-750/80 pr-4 flex flex-col items-center justify-center text-center bg-[#090a18] rounded-2xl p-2.5">
-                <NovaInteractiveAvatar
-                  size="xl"
-                  externalMood={currentSpeech.mood}
-                  isBusy={true}
-                  isSpeaking={isSpeakingVoice}
-                  enableVoiceReactions={!isMuted}
-                />
-
-                <div className="mt-2.5 space-y-1">
-                  <h4 className="text-xs font-black text-white tracking-wider flex items-center justify-center gap-1">
+        <div
+          style={{
+            maxWidth: dockerSize.panelWidth,
+          }}
+          className="w-full h-full rounded-2xl bg-[#070814] border-2 border-brand-purple/80 shadow-[0_20px_60px_rgba(0,0,0,0.98)] flex flex-col overflow-hidden animate-fadeIn p-3.5 box-border"
+        >
+          {/* Top Master Header: Avatar, Symmetrical Tab Switcher & Window Controls */}
+          <div className="flex items-center justify-between border-b border-dark-750 pb-2 mb-2 shrink-0">
+            {/* Identity Badge */}
+            <div className="flex items-center space-x-2.5">
+              <NovaInteractiveAvatar
+                size="sm"
+                externalMood={currentSpeech.mood}
+                isBusy={isBusy}
+                isSpeaking={isSpeakingVoice}
+                enableVoiceReactions={!isMuted}
+              />
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-xs font-black text-white tracking-wide flex items-center gap-1.5">
                     <span>NOVA AI</span>
-                  </h4>
-                  {pipelineProgress?.step === 'error' || currentSpeech.mood === 'alert' ? (
-                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-                      HATA OLUŞTU
+                    <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      WINDOWS DOCK
                     </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                      İŞLEMDE • %{activePercent}
-                    </span>
-                  )}
+                  </h3>
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">• Baş Danışman & Komuta</span>
                 </div>
-              </div>
-
-              {/* Right Side: Narration & 5-Step Process Flow Tree */}
-              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                
-                {/* Header Row: Stage Name & Window Controls */}
-                <div className="flex items-center justify-between pb-1 border-b border-dark-750">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-brand-cyan">
-                      İŞLEM SIRASI AĞACI
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      (Adım {activeStep}/5)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5">
-                    {(pipelineProgress?.step === 'error' || currentSpeech.mood === 'alert') && (
-                      <button
-                        type="button"
-                        onClick={handleDismissError}
-                        className="px-2 py-0.5 rounded-lg bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/50 text-[10px] font-bold text-rose-200 transition-colors flex items-center gap-1 shadow-sm"
-                        title="Hatayı Yoksay ve Sistemi Sıfırla"
-                      >
-                        <ShieldCheck className="w-3 h-3 text-rose-400" />
-                        <span>Hatayı Yoksay</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={toggleMute}
-                      className={`p-1 rounded-lg border text-xs transition-colors ${
-                        isMuted ? 'bg-rose-950/80 border-rose-500/40 text-rose-300' : 'bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border-dark-750'
-                      }`}
-                      title={isMuted ? 'Sesi Aç' : 'Sessize Al'}
-                    >
-                      {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                    </button>
-
-                    <button
-                      onClick={handleToggleMainWindow}
-                      className="p-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white border border-dark-750 text-xs transition-colors"
-                      title="Ana Stüdyo Penceresini Öne Getir"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5 text-brand-cyan" />
-                    </button>
-
-                    <button
-                      onClick={() => handleSetExpanded(false)}
-                      className="p-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border border-dark-750 text-xs transition-colors"
-                      title="Kapsüle Küçült"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Speech Narration Box from NOVA */}
-                <div className={`p-2.5 rounded-xl border space-y-1 transition-colors ${
-                  pipelineProgress?.step === 'error' || currentSpeech.mood === 'alert'
-                    ? 'bg-rose-950/40 border-rose-500/40'
-                    : 'bg-[#090a18] border-dark-750'
-                }`}>
-                  <div className="flex items-center justify-between text-[10px] font-bold text-amber-300">
-                    <div className="flex items-center space-x-1.5">
-                      <Sparkles className="w-3 h-3 text-amber-400" />
-                      <span>NOVA Anlatımı:</span>
-                    </div>
-                    {isSpeakingVoice && (
-                      <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
-                        <Volume2 className="w-3 h-3" />
-                        <span>Seslendiriliyor</span>
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-100 leading-snug line-clamp-2">
-                    “{liveNarration}”
-                  </p>
-                  {(pipelineProgress?.step === 'error' || currentSpeech.mood === 'alert') && (
-                    <div className="pt-1 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleDismissError}
-                        className="px-2.5 py-0.5 rounded-lg bg-rose-600/40 hover:bg-rose-600/70 border border-rose-400/50 text-[10px] font-bold text-rose-100 transition-all flex items-center gap-1 shadow-sm"
-                      >
-                        <ShieldCheck className="w-3 h-3 text-rose-300" />
-                        <span>Hatayı Yoksay ve Sıfırla</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Visual Process Flow Tree (Connected 5-Step Pipeline) */}
-                <div className="space-y-1.5">
-                  <div className="relative flex items-center justify-between px-2 pt-1">
-                    {/* Connecting Background Line */}
-                    <div className="absolute top-[18px] left-6 right-6 h-0.5 bg-dark-750 -z-0" />
-                    <div
-                      className="absolute top-[18px] left-6 h-0.5 bg-gradient-to-r from-emerald-500 via-brand-purple to-brand-cyan -z-0 transition-all duration-500"
-                      style={{ width: `${Math.min(100, Math.max(0, ((activeStep - 1) / 4) * 100))}%` }}
-                    />
-
-                    {processStages.map((stage) => {
-                      const isPast = stage.id < activeStep;
-                      const isCurrent = stage.id === activeStep;
-                      const isUpcoming = stage.id > activeStep;
-                      const StageIcon = stage.icon;
-
-                      return (
-                        <div key={stage.id} className="flex flex-col items-center relative z-10">
-                          <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
-                              isPast
-                                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-400 shadow-md shadow-emerald-500/20'
-                                : isCurrent
-                                ? 'bg-amber-500/20 border-amber-400 text-amber-300 animate-pulse shadow-md shadow-amber-500/30 ring-2 ring-amber-400/30'
-                                : 'bg-[#080914] border-dark-700 text-slate-500'
-                            }`}
-                          >
-                            {isPast ? (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                            ) : isCurrent ? (
-                              <StageIcon className="w-3.5 h-3.5" />
-                            ) : (
-                              <span className="text-[10px] font-mono font-bold">{stage.id}</span>
-                            )}
-                          </div>
-                          <span
-                            className={`text-[9px] font-bold mt-1 text-center transition-colors truncate max-w-[65px] ${
-                              isCurrent
-                                ? 'text-amber-300 font-extrabold'
-                                : isPast
-                                ? 'text-emerald-400'
-                                : 'text-slate-500'
-                            }`}
-                          >
-                            {stage.title}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Tiny Progress Bar */}
-                  <div className="w-full bg-[#080914] rounded-full h-1.5 overflow-hidden border border-dark-750">
-                    <div
-                      className="bg-gradient-to-r from-emerald-500 via-brand-purple to-brand-cyan h-full rounded-full transition-all duration-300"
-                      style={{ width: `${activePercent}%` }}
-                    />
-                  </div>
-                </div>
-
               </div>
             </div>
-          ) : (
-            /* ---------------------------------------------------- */
-            /* CASE B: IDLE STATE -> SLEEK COMMAND CENTER DOCK      */
-            /* ---------------------------------------------------- */
-            <>
-              {/* Top Bar: Identity, Visor Eyes & Controls */}
-              <div className="flex items-center justify-between border-b border-dark-750 pb-2">
-                <div className="flex items-center space-x-3">
-                  <NovaInteractiveAvatar
-                    size="md"
-                    externalMood={currentSpeech.mood}
-                    isBusy={false}
-                    isSpeaking={isSpeakingVoice}
-                    enableVoiceReactions={!isMuted}
-                  />
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="text-xs font-black text-white tracking-wide flex items-center gap-1.5">
-                        <span>NOVA</span>
-                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          WINDOWS DOCKER
-                        </span>
-                      </h3>
-                      <span className="text-[10px] text-slate-400">• Baş Danışman & NEXUS Komutanı</span>
+
+            {/* Central Tab Switcher: Cockpit vs Chat */}
+            <div className="flex items-center bg-dark-900/90 p-0.5 rounded-xl border border-dark-750">
+              <button
+                type="button"
+                onClick={() => handleTabChange('cockpit')}
+                className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                  activeTab === 'cockpit'
+                    ? 'bg-gradient-to-r from-brand-purple to-purple-600 text-white shadow-md shadow-brand-purple/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Operasyon Kokpiti</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('chat')}
+                className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 relative ${
+                  activeTab === 'chat'
+                    ? 'bg-gradient-to-r from-brand-cyan to-blue-600 text-white shadow-md shadow-brand-cyan/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>NOVA Chat</span>
+                {messages.length > 1 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </button>
+            </div>
+
+            {/* Window & Voice Actions */}
+            <div className="flex items-center space-x-1.5">
+              {(pipelineProgress?.step === 'error' || currentSpeech.mood === 'alert') && (
+                <button
+                  type="button"
+                  onClick={handleDismissError}
+                  className="px-2 py-0.5 rounded-lg bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/50 text-[10px] font-bold text-rose-200 transition-colors flex items-center gap-1 shadow-sm"
+                  title="Hatayı Yoksay ve Sistemi Sıfırla"
+                >
+                  <ShieldCheck className="w-3 h-3 text-rose-400" />
+                  <span>Sıfırla</span>
+                </button>
+              )}
+
+              <button
+                onClick={toggleMute}
+                className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                  isMuted ? 'bg-rose-950/80 border-rose-500/40 text-rose-300' : 'bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border-dark-750'
+                }`}
+                title={isMuted ? 'Sesi Aç' : 'Sessize Al'}
+              >
+                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                onClick={handleToggleMainWindow}
+                className="p-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white border border-dark-750 text-xs transition-colors"
+                title="Ana Stüdyo Penceresini Öne Getir / Küçült"
+              >
+                <Maximize2 className="w-3.5 h-3.5 text-brand-cyan" />
+              </button>
+
+              <button
+                onClick={() => handleSetExpanded(false)}
+                className="p-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border border-dark-750 text-xs transition-colors"
+                title="Kapsüle Küçült"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* TAB CONTENT A: ELITE OPERASYON KOKPİTİ                   */}
+          {/* ======================================================== */}
+          {activeTab === 'cockpit' && (
+            <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
+              {isBusy ? (
+                /* -------------------------------------------------- */
+                /* BUSY COCKPIT: Large Avatar + 5-Step Process Tree   */
+                /* -------------------------------------------------- */
+                <div className="w-full h-full flex gap-3.5 items-stretch">
+                  {/* Left Avatar Card */}
+                  <div className="w-[170px] shrink-0 border-r border-dark-750/80 pr-3.5 flex flex-col items-center justify-center text-center bg-[#090a18] rounded-2xl p-2">
+                    <NovaInteractiveAvatar
+                      size="lg"
+                      externalMood={currentSpeech.mood}
+                      isBusy={true}
+                      isSpeaking={isSpeakingVoice}
+                      enableVoiceReactions={!isMuted}
+                    />
+                    <div className="mt-2 space-y-1">
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                        İŞLEMDE • %{activePercent}
+                      </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 truncate max-w-sm">
-                      Masaüstü tam yetkili otonom yapay zeka kontrolü
-                    </p>
+                  </div>
+
+                  {/* Right: Live Narration & Flow Tree */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                    <div className="p-2.5 rounded-xl border bg-[#090a18] border-dark-750 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-amber-300">
+                        <div className="flex items-center space-x-1.5">
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                          <span>NOVA Canlı Anlatımı:</span>
+                        </div>
+                        {isSpeakingVoice && (
+                          <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
+                            <Volume2 className="w-3 h-3" />
+                            <span>Seslendiriliyor</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-100 leading-snug line-clamp-2">
+                        “{liveNarration}”
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <div className="relative flex items-center justify-between px-2 pt-1">
+                        <div className="absolute top-[18px] left-6 right-6 h-0.5 bg-dark-750 -z-0" />
+                        <div
+                          className="absolute top-[18px] left-6 h-0.5 bg-gradient-to-r from-emerald-500 via-brand-purple to-brand-cyan -z-0 transition-all duration-500"
+                          style={{ width: `${Math.min(100, Math.max(0, ((activeStep - 1) / 4) * 100))}%` }}
+                        />
+
+                        {processStages.map((stage) => {
+                          const isPast = stage.id < activeStep;
+                          const isCurrent = stage.id === activeStep;
+                          const StageIcon = stage.icon;
+
+                          return (
+                            <div key={stage.id} className="flex flex-col items-center relative z-10">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
+                                  isPast
+                                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-400 shadow-md shadow-emerald-500/20'
+                                    : isCurrent
+                                    ? 'bg-amber-500/20 border-amber-400 text-amber-300 animate-pulse shadow-md shadow-amber-500/30 ring-2 ring-amber-400/30'
+                                    : 'bg-[#080914] border-dark-700 text-slate-500'
+                                }`}
+                              >
+                                {isPast ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                ) : isCurrent ? (
+                                  <StageIcon className="w-3.5 h-3.5" />
+                                ) : (
+                                  <span className="text-[10px] font-mono font-bold">{stage.id}</span>
+                                )}
+                              </div>
+                              <span
+                                className={`text-[9px] font-bold mt-1 text-center truncate max-w-[65px] ${
+                                  isCurrent ? 'text-amber-300 font-extrabold' : isPast ? 'text-emerald-400' : 'text-slate-500'
+                                }`}
+                              >
+                                {stage.title}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="w-full bg-[#080914] rounded-full h-1.5 overflow-hidden border border-dark-750">
+                        <div
+                          className="bg-gradient-to-r from-emerald-500 via-brand-purple to-brand-cyan h-full rounded-full transition-all duration-300"
+                          style={{ width: `${activePercent}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Quick Window & Mute Actions */}
-                <div className="flex items-center space-x-1.5">
-                  <button
-                    onClick={toggleMute}
-                    className={`p-1.5 rounded-lg border text-xs transition-colors ${
-                      isMuted ? 'bg-rose-950/80 border-rose-500/40 text-rose-300' : 'bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border-dark-750'
-                    }`}
-                    title={isMuted ? 'Sesi Aç' : 'Sessize Al'}
-                  >
-                    {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    onClick={handleToggleMainWindow}
-                    className="p-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-300 hover:text-white border border-dark-750 text-xs transition-colors flex items-center gap-1"
-                    title="Ana AutoClip Studio Uygulamasını Öne Getir / Küçült"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5 text-brand-cyan" />
-                  </button>
-
-                  <button
-                    onClick={() => handleSetExpanded(false)}
-                    className="p-1.5 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white border border-dark-750 text-xs transition-colors"
-                    title="Kapsüle Küçült"
-                  >
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Live Message / Speech Box */}
-              <div className="my-1 px-3 py-2 rounded-xl bg-[#090a18] border border-dark-750 flex items-start space-x-2">
-                <span className="text-amber-400 font-serif text-sm leading-none mt-0.5">“</span>
-                <div className="flex-1 min-w-0">
-                  {isSpeakingVoice && (
-                    <div className="flex items-center space-x-1.5 text-[9px] text-emerald-400 font-bold mb-0.5 animate-pulse">
-                      <Volume2 className="w-3 h-3 text-emerald-400" />
-                      <span>NOVA SESLİ YANIT VERİYOR...</span>
+              ) : (
+                /* -------------------------------------------------- */
+                /* IDLE COCKPIT: ELITE SYMMETRICAL ACTION DASHBOARD   */
+                /* -------------------------------------------------- */
+                <div className="flex-1 min-h-0 flex flex-col justify-between space-y-2">
+                  {/* Unified Live Telemetry HUD Bar */}
+                  <div className="px-3.5 py-2 rounded-xl bg-[#090a18]/90 border border-slate-800/80 flex items-center justify-between text-xs">
+                    <div className="flex items-center space-x-2.5 truncate">
+                      <span className="flex items-center space-x-1.5 text-brand-cyan font-bold shrink-0">
+                        <Activity className="w-3.5 h-3.5 text-brand-cyan" />
+                        <span>Sistem:</span>
+                      </span>
+                      <span className="text-[11px] text-slate-300 font-medium truncate">
+                        Whisper AI & LLM Hazır • 🛡️ {activeSafetyText}
+                      </span>
                     </div>
-                  )}
-                  <p className="text-xs text-slate-100 leading-snug line-clamp-2">
-                    {dockMode === 'ambient' ? ambientTips[ambientTipIdx] : currentSpeech.message}
-                  </p>
-                  {currentSpeech.action && (
-                    <div className="mt-2 pt-1.5 border-t border-dark-750/80 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={(e) => handleExecuteAction(currentSpeech.action, e)}
-                        className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-[11px] flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all animate-bounce"
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      {currentSpeech.action && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleExecuteAction(currentSpeech.action, e)}
+                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-md shadow-amber-500/20 transition-all cursor-pointer animate-pulse"
+                        >
+                          <Play className="w-2.5 h-2.5 fill-slate-950" />
+                          <span>{currentSpeech.action.label}</span>
+                        </button>
+                      )}
+
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        autopilotState?.isRunning
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-dark-800 text-slate-400 border-dark-700'
+                      }`}>
+                        {autopilotState?.isRunning ? '⚡ 7/24 Otopilot Aktif' : '⚡ Otopilot Hazır'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Symmetrical 6-Card Cyber Action Grid (3 columns x 2 rows) */}
+                  <div className="grid grid-cols-3 gap-2 flex-1 min-h-0">
+                    {/* Card 1: Hızlı Video Üret */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenFeature('new_video', e)}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-brand-purple/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-brand-purple/15"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-purple to-purple-600 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        <Film className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white group-hover:text-brand-purple transition-colors truncate">
+                          Yeni Video Üret
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          Creative Commons Keşfi
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 2: Keşif Toplantısı (Reliable 1-Click Trigger) */}
+                    <button
+                      type="button"
+                      onClick={handleStartMeeting}
+                      disabled={isStartingMeeting}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-brand-cyan/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-brand-cyan/15 disabled:opacity-50"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-cyan to-blue-600 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        {isStartingMeeting ? (
+                          <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        ) : (
+                          <Radio className="w-4 h-4 text-white animate-pulse" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white group-hover:text-brand-cyan transition-colors truncate">
+                          Keşif Toplantısı
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {isStartingMeeting ? 'Başlatılıyor...' : '14 Ajan Masada Toplan'}
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 3: Viral Adaylar */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenFeature('pitches', e)}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-amber-500/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-amber-500/15"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        <Flame className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors truncate">
+                          Viral Adaylar
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          Adayları İncele & Kurgula
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 4: 7/24 Otopilot Toggle */}
+                    <button
+                      type="button"
+                      onClick={handleToggleAutopilot}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-emerald-500/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-emerald-500/15"
+                    >
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform ${
+                        autopilotState?.isRunning
+                          ? 'bg-gradient-to-tr from-emerald-500 to-teal-600'
+                          : 'bg-dark-800 border border-dark-700'
+                      }`}>
+                        <Zap className={`w-4 h-4 ${autopilotState?.isRunning ? 'text-white' : 'text-slate-400'}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className={`text-xs font-bold transition-colors truncate ${
+                          autopilotState?.isRunning ? 'text-emerald-400' : 'text-white group-hover:text-emerald-400'
+                        }`}>
+                          {autopilotState?.isRunning ? '7/24 Otopilot (Aktif)' : '7/24 Otopilot (Kapalı)'}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {autopilotState?.isRunning ? 'Altın Saatlerde Yayın' : 'Başlatmak İçin Tıkla'}
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 5: Nexus War Room */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenFeature('agency', e)}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-indigo-500/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-indigo-500/15"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-700 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        <Building2 className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors truncate">
+                          Nexus War Room
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          3D / 2D Operasyon Masası
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Card 6: Kanal Güvenliği & Ayarlar */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenFeature('settings', e)}
+                      className="rounded-xl bg-[#090a18] hover:bg-slate-900/90 border border-slate-800/80 hover:border-rose-500/70 p-2.5 text-left transition-all duration-200 flex items-center space-x-3 cursor-pointer group shadow-sm hover:shadow-rose-500/15"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-500 to-purple-600 flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        <ShieldCheck className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white group-hover:text-rose-400 transition-colors truncate">
+                          Güvenlik & Ayarlar
+                        </h4>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          Filtreler & Stüdyo Tercihleri
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB CONTENT B: FULL INTERACTIVE NOVA AI CHAT MODULE      */}
+          {/* ======================================================== */}
+          {activeTab === 'chat' && (
+            <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
+              {/* Message Stream with auto-scroll */}
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1.5 my-1 custom-scrollbar">
+                {messages.map((msg) => {
+                  const isUser = msg.sender === 'user';
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-fadeIn`}
+                    >
+                      <div className="flex items-center space-x-1.5 mb-0.5 px-1">
+                        {isUser ? (
+                          <>
+                            <span className="text-[10px] text-slate-400 font-medium">{msg.timestamp}</span>
+                            <span className="text-[10px] font-extrabold text-brand-purple">Patron</span>
+                            <User className="w-3 h-3 text-brand-purple" />
+                          </>
+                        ) : (
+                          <>
+                            <Bot className="w-3 h-3 text-brand-cyan" />
+                            <span className="text-[10px] font-extrabold text-brand-cyan">NOVA AI</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{msg.timestamp}</span>
+                            {msg.status === 'acting' && (
+                              <span className="text-[9px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.2 rounded border border-amber-500/30 flex items-center gap-1">
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" /> işlemde
+                              </span>
+                            )}
+                            {msg.status === 'error' && (
+                              <span className="text-[9px] font-bold text-rose-400 bg-rose-500/15 px-1.5 py-0.2 rounded border border-rose-500/30">
+                                hata
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <div
+                        className={`max-w-[90%] rounded-2xl p-2.5 text-xs leading-relaxed shadow-md ${
+                          isUser
+                            ? 'bg-gradient-to-r from-brand-purple to-purple-700 text-white rounded-tr-none'
+                            : 'bg-[#090a18] border border-dark-750 text-slate-100 rounded-tl-none'
+                        }`}
                       >
-                        <Play className="w-3 h-3 fill-slate-950" />
-                        <span>{currentSpeech.action.label}</span>
-                      </button>
+                        <p className="whitespace-pre-wrap">{msg.text}</p>
+
+                        {/* Interactive Message Action Card if attached */}
+                        {msg.action && (
+                          <div className="mt-2 pt-1.5 border-t border-dark-750/80 flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-slate-400 truncate">Önerilen Aksiyon:</span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleExecuteAction(msg.action, e)}
+                              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-[10px] flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all active:scale-95 cursor-pointer shrink-0"
+                            >
+                              <Play className="w-2.5 h-2.5 fill-slate-950" />
+                              <span>{msg.action.label}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Quick Prompt Chips - ALWAYS PINNED ABOVE INPUT */}
+              <div className="shrink-0 py-1 border-t border-dark-750/80 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
+                {quickPrompts.map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendCommand(chip.cmd)}
+                    className="px-2.5 py-1 rounded-lg bg-dark-850 hover:bg-dark-800 border border-dark-750 hover:border-brand-purple/50 text-[10px] font-semibold text-slate-300 hover:text-white whitespace-nowrap transition-all cursor-pointer shrink-0"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Chat Input Bar - ALWAYS PINNED AT BOTTOM */}
+              <div className="shrink-0 pt-1.5 border-t border-dark-750/80">
+                <div className="flex items-center space-x-2 bg-[#090a18] border border-dark-750 rounded-2xl px-3 py-1.5 focus-within:border-brand-purple transition-colors">
+                  <Bot className="w-4 h-4 text-brand-purple shrink-0" />
+                  <input
+                    type="text"
+                    value={inputPrompt}
+                    onChange={(e) => setInputPrompt(e.target.value)}
+                    onFocus={() => { isInputFocusedRef.current = true; }}
+                    onBlur={() => { isInputFocusedRef.current = false; }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSendCommand();
+                    }}
+                    placeholder="NOVA'ya bir emir ver (Örn: Toplantı başlat, Viral adayları göster)..."
+                    disabled={isSubmitting}
+                    className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSendCommand()}
+                    disabled={!inputPrompt.trim() || isSubmitting}
+                    className="p-1.5 rounded-xl bg-gradient-to-r from-brand-purple to-purple-600 hover:from-purple-600 hover:to-purple-500 disabled:opacity-40 text-white transition-all shadow-md shadow-brand-purple/20 cursor-pointer"
+                  >
+                    {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
               </div>
-
-              {/* Quick Operations Button Matrix */}
-              <div className="grid grid-cols-6 gap-1.5 mb-1.5">
-                {/* 1. Dedicated New Video Production Button */}
-                <button
-                  onClick={(e) => handleOpenFeature('new_video', e)}
-                  className="px-2 py-1.5 rounded-xl bg-gradient-to-r from-brand-purple to-brand-cyan hover:from-purple-600 hover:to-cyan-600 text-white text-[11px] font-bold transition-all flex items-center justify-center space-x-1 shadow-md shadow-brand-purple/20 col-span-2"
-                  title="YouTube Creative Commons ağını otomatik tarar, en viral videoyu bulur ve 13 ajanlı ajans masasında kurgular"
-                >
-                  <Film className="w-3.5 h-3.5 text-white" />
-                  <span className="truncate">🎬 Yeni Video Üret</span>
-                </button>
-
-                {/* 2. 7/24 Autopilot Toggle */}
-                <button
-                  onClick={handleToggleAutopilot}
-                  className={`px-2 py-1.5 rounded-xl border text-[11px] font-bold transition-all flex items-center justify-center space-x-1 shadow-sm ${
-                    autopilotState?.isRunning
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
-                      : 'bg-[#090a18] hover:bg-dark-800 text-slate-300 border-dark-750'
-                  }`}
-                  title="7/24 Otopilot Otonom Motorunu Aç/Kapat"
-                >
-                  <span className={`w-2 h-2 rounded-full ${autopilotState?.isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                  <span className="truncate">{autopilotState?.isRunning ? '7/24 Aktif' : 'Otopilot'}</span>
-                </button>
-
-                {/* 3. Run Daily Batch */}
-                <button
-                  onClick={handleRunDailyBatch}
-                  disabled={isBusy}
-                  className="px-2 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px] font-bold transition-all flex items-center justify-center space-x-1 disabled:opacity-40"
-                  title="Günün 3 altın saati için 3 farklı video üretir"
-                >
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="truncate">3 Klip</span>
-                </button>
-
-                {/* 4. Open Agency Room */}
-                <button
-                  onClick={(e) => handleOpenFeature('agency', e)}
-                  className="px-2 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-[11px] font-bold transition-all flex items-center justify-center space-x-1"
-                  title="12 Ajanlı 2D Sanal Ajans Masasını Açar"
-                >
-                  <Building2 className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="truncate">Ajans</span>
-                </button>
-
-                {/* 5. Open Settings */}
-                <button
-                  onClick={(e) => handleOpenFeature('settings', e)}
-                  className="px-2 py-1.5 rounded-xl bg-[#090a18] hover:bg-dark-800 border border-dark-750 text-slate-300 hover:text-white text-[11px] font-bold transition-all flex items-center justify-center space-x-1"
-                  title="Stüdyo ve Sistem Ayarlarını Açar"
-                >
-                  <Settings className="w-3.5 h-3.5 text-brand-cyan" />
-                  <span className="truncate">Ayarlar</span>
-                </button>
-              </div>
-
-              {/* Micro Command Input Bar */}
-              <div className="flex items-center space-x-1.5 bg-[#090a18] border border-dark-750 rounded-xl px-2.5 py-1">
-                <input
-                  type="text"
-                  value={inputPrompt}
-                  onChange={(e) => setInputPrompt(e.target.value)}
-                  onFocus={() => { isInputFocusedRef.current = true; }}
-                  onBlur={() => { isInputFocusedRef.current = false; }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSendCommand();
-                  }}
-                  placeholder="NOVA'ya komut ver (Örn: Röportaj bul 3M+)..."
-                  disabled={isSubmitting}
-                  className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
-                />
-                <button
-                  onClick={handleSendCommand}
-                  disabled={!inputPrompt.trim() || isSubmitting}
-                  className="p-1 rounded-lg bg-brand-purple hover:bg-purple-600 disabled:opacity-40 text-white transition-colors"
-                >
-                  {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                </button>
-              </div>
-            </>
-          )}
-
-        </div>
-      )}
-    </div>
-  );
-};
-
-/**
- * Animated Cyber Robot Visor & Interactive OLED Eyes Component
- */
-interface RobotVisorProps {
-  mood?: 'idle' | 'working' | 'excited' | 'alert' | 'success';
-  isBlinking: boolean;
-  gazeDirection: 'center' | 'left' | 'right';
-  isBusy: boolean;
-  isSpeaking?: boolean;
-  size?: 'sm' | 'md' | 'lg';
-}
-
-const RobotVisor: React.FC<RobotVisorProps> = ({
-  mood = 'idle',
-  isBlinking,
-  gazeDirection,
-  isBusy,
-  isSpeaking = false,
-  size = 'md',
-}) => {
-  const isSm = size === 'sm';
-  const isLg = size === 'lg';
-  const isAlert = mood === 'alert';
-  const isVoiceActive = isBusy || isSpeaking;
-
-  // Pupil horizontal offset based on gaze direction
-  const pupilTranslateX = gazeDirection === 'left' ? '-3px' : gazeDirection === 'right' ? '3px' : '0px';
-
-  const eyeColorClass = isAlert
-    ? 'bg-rose-500 shadow-sm shadow-rose-500 animate-pulse'
-    : isSpeaking
-    ? 'bg-emerald-400 shadow-md shadow-emerald-400 animate-pulse'
-    : 'bg-brand-cyan shadow-sm shadow-brand-cyan';
-
-  return (
-    <div
-      className={`relative rounded-2xl bg-[#040409] flex flex-col items-center justify-center overflow-hidden shadow-inner shrink-0 transition-all ${
-        isAlert
-          ? 'border-2 border-rose-500 shadow-lg shadow-rose-500/40 animate-pulse'
-          : isSpeaking
-          ? 'border-2 border-emerald-400/80 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-400/40'
-          : 'border border-brand-purple/60'
-      } ${
-        isSm ? 'w-8 h-8 rounded-xl' : isLg ? 'w-28 h-28 border-2 border-brand-purple' : 'w-11 h-11'
-      }`}
-    >
-      {/* Outer ambient glow */}
-      <div
-        className={`absolute inset-0 pointer-events-none transition-opacity ${
-          isAlert
-            ? 'bg-rose-500/30 animate-pulse opacity-90'
-            : isSpeaking
-            ? 'bg-emerald-500/20 animate-pulse opacity-90'
-            : 'bg-gradient-to-tr from-brand-purple/30 via-brand-cyan/20 to-amber-500/20 opacity-60'
-        }`}
-      />
-
-      {/* OLED Visor Screen */}
-      <div
-        className={`relative rounded-xl bg-black flex items-center justify-center space-x-1.5 overflow-hidden shadow-sm transition-colors ${
-          isAlert
-            ? 'border-2 border-rose-500 shadow-md shadow-rose-500/50'
-            : isSpeaking
-            ? 'border-2 border-emerald-400/80 shadow-md shadow-emerald-500/40'
-            : 'border border-cyan-500/50'
-        } ${
-          isSm ? 'w-6 h-4 rounded-md space-x-1' : isLg ? 'w-20 h-12 rounded-xl space-x-2.5 border-2 border-cyan-400/80 shadow-lg shadow-cyan-500/20' : 'w-8 h-5'
-        }`}
-      >
-        {/* Animated Robot Left Eye */}
-        <div
-          className={`rounded-full transition-all duration-150 flex items-center justify-center ${eyeColorClass} ${
-            isSm ? 'w-1.5' : isLg ? 'w-4' : 'w-2'
-          }`}
-          style={{
-            height: isBlinking ? '2px' : (mood === 'excited' || isSpeaking) ? (isLg ? '6px' : '3px') : isSm ? '8px' : isLg ? '22px' : '10px',
-            borderRadius: (mood === 'excited' || isSpeaking) ? '4px 4px 0 0' : '9999px',
-            transform: `translateX(${pupilTranslateX})`,
-          }}
-        >
-          {/* Inner bright pupil */}
-          {!isBlinking && (
-            <span className={`bg-white rounded-full opacity-90 ${isLg ? 'w-1.5 h-2.5' : 'w-0.5 h-1'}`} />
-          )}
-        </div>
-
-        {/* Animated Robot Right Eye */}
-        <div
-          className={`rounded-full transition-all duration-150 flex items-center justify-center ${eyeColorClass} ${
-            isSm ? 'w-1.5' : isLg ? 'w-4' : 'w-2'
-          }`}
-          style={{
-            height: isBlinking ? '2px' : (mood === 'excited' || isSpeaking) ? (isLg ? '6px' : '3px') : isSm ? '8px' : isLg ? '22px' : '10px',
-            borderRadius: (mood === 'excited' || isSpeaking) ? '4px 4px 0 0' : '9999px',
-            transform: `translateX(${pupilTranslateX})`,
-          }}
-        >
-          {!isBlinking && (
-            <span className={`bg-white rounded-full opacity-90 ${isLg ? 'w-1.5 h-2.5' : 'w-0.5 h-1'}`} />
-          )}
-        </div>
-
-        {/* Laser Scanning Line when busy or alert */}
-        {(isBusy || isAlert || isSpeaking) && (
-          <div
-            className={`absolute inset-x-0 h-0.5 bg-gradient-to-r animate-pulse ${
-              isAlert
-                ? 'from-transparent via-rose-400 to-transparent'
-                : isSpeaking
-                ? 'from-transparent via-emerald-300 to-transparent'
-                : 'from-transparent via-cyan-300 to-transparent'
-            }`}
-          />
-        )}
-
-        {/* Scanline reflection overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
-      </div>
-
-      {/* Audio Wave Visualizer Bars */}
-      {!isSm && (
-        <div className="flex items-center space-x-1 mt-1.5">
-          <span className={`w-0.5 rounded-full ${isVoiceActive ? 'bg-emerald-400 animate-bounce h-3' : 'bg-brand-purple h-1'}`} style={{ animationDelay: '0ms' }} />
-          <span className={`w-0.5 rounded-full ${isVoiceActive ? 'bg-brand-cyan animate-bounce h-4.5' : 'bg-brand-cyan h-1.5'}`} style={{ animationDelay: '150ms' }} />
-          <span className={`w-0.5 rounded-full ${isVoiceActive ? 'bg-amber-400 animate-bounce h-3.5' : 'bg-amber-400 h-1'}`} style={{ animationDelay: '300ms' }} />
-          {isLg && (
-            <>
-              <span className={`w-0.5 rounded-full ${isVoiceActive ? 'bg-emerald-400 animate-bounce h-4' : 'bg-emerald-400 h-1.5'}`} style={{ animationDelay: '200ms' }} />
-              <span className={`w-0.5 rounded-full ${isVoiceActive ? 'bg-brand-purple animate-bounce h-2.5' : 'bg-brand-purple h-1'}`} style={{ animationDelay: '400ms' }} />
-            </>
+            </div>
           )}
         </div>
       )}

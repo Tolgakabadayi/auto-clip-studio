@@ -231,7 +231,7 @@ copilotService.onOpenModal = (modal) => {
     mainWindow.webContents.send('copilot:open-modal', modal);
   }
 };
-copilotService.onTriggerMeeting = async (options?: { niche?: string; keyword?: string }) => {
+async function runStrategicDiscoveryMeetingWorkflow(options?: { niche?: string; keyword?: string }) {
   const apSettings = autopilotService.getSettings();
   if (apSettings.brandSafetyConfig) {
     agencyService.setBrandSafetyConfig(apSettings.brandSafetyConfig);
@@ -239,29 +239,94 @@ copilotService.onTriggerMeeting = async (options?: { niche?: string; keyword?: s
   const niche = options?.niche || apSettings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri';
   const keyword = options?.keyword || apSettings.customKeyword || undefined;
 
-  const result = await agencyService.runStrategicDiscoveryMeeting({
-    niche,
-    keyword,
-    minViewCount: apSettings.minViewCount,
-    onMessage: (msg) => broadcastToWindows('agency:message', msg),
-    onProgress: (p) => broadcastToWindows('agency:progress', p),
-    onLog: (l) => broadcastToWindows('pipeline:log', l),
+  // 1. Immediately broadcast active meeting state to all windows
+  broadcastToWindows('agency:meeting-state', {
+    isRunning: true,
+    phase: 'ceo_curation',
+    percent: 10,
+    message: '14 Ajanlı Stratejik Keşif Toplantısı Başlatıldı...',
+    activeAgent: 'ceo',
+  });
+  broadcastToWindows('pipeline:progress', {
+    step: 'agency_meeting',
+    percent: 10,
+    message: '14 Ajanlı Stratejik Keşif Toplantısı Başlatıldı...',
   });
 
-  broadcastToWindows('agency:pitches-ready', result.candidates);
+  const sendAgencyMessage = (msg: AgencyMessage) => {
+    broadcastToWindows('agency:message', msg);
+  };
+  const sendAgencyProgress = (p: AgencyProgressEvent) => {
+    broadcastToWindows('agency:progress', p);
+    broadcastToWindows('agency:meeting-state', {
+      isRunning: true,
+      ...p,
+    });
+    broadcastToWindows('pipeline:progress', {
+      step: p.phase || 'agency_meeting',
+      percent: p.percent || 10,
+      message: p.message || '',
+    });
+  };
+  const sendLog = (l: string) => {
+    broadcastToWindows('pipeline:log', l);
+  };
 
-  const candidateCount = result.candidates?.length || 0;
-  copilotService.emitSpeech({
-    message: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla tamamlandı patron! Scout, Trend Hunter ve Sentinel masaya tam ${candidateCount} adet viral adayı getirdi. Hemen inceleyip seçmek için aşağıdaki butona tıkla!`,
-    mood: 'success',
-    action: {
-      label: '🎯 Viral Adayları İncele & Seç',
-      action: 'open_pitches',
-      payload: { count: candidateCount },
-    },
-  });
+  try {
+    const result = await agencyService.runStrategicDiscoveryMeeting({
+      niche,
+      keyword,
+      minViewCount: apSettings.minViewCount,
+      onMessage: sendAgencyMessage,
+      onProgress: sendAgencyProgress,
+      onLog: sendLog,
+    });
 
-  return result;
+    // 2. Broadcast curated candidate pitches to all windows
+    broadcastToWindows('agency:pitches-ready', result.candidates);
+
+    const candidateCount = result.candidates?.length || 0;
+    copilotService.emitSpeech({
+      message: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla tamamlandı patron! Scout, Trend Hunter ve Sentinel masaya tam ${candidateCount} adet viral adayı getirdi. Hemen inceleyip seçmek için aşağıdaki butona tıkla!`,
+      mood: 'success',
+      action: {
+        label: '🎯 Viral Adayları İncele & Seç',
+        action: 'open_pitches',
+        payload: { count: candidateCount },
+      },
+    });
+
+    copilotService.emitMessage({
+      id: `asst_meeting_${Date.now()}`,
+      sender: 'assistant',
+      text: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla sonuçlandı!\n\nMasadaki 12 uzman ajan ${candidateCount} adet telifsiz viral video belirledi. Sonuçları açıp dilediğin videoyu kurguya gönderebilirsin.`,
+      timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+      status: 'done',
+      actionTaken: 'meeting_completed',
+      action: {
+        label: '🎯 Viral Adayları İncele & Seç',
+        action: 'open_pitches',
+        payload: { count: candidateCount },
+      },
+    });
+
+    return result;
+  } catch (err: any) {
+    sendLog(`[HATA] Stratejik toplantı hatası: ${err.message}`);
+    throw err;
+  } finally {
+    // 3. Mark meeting as completed
+    broadcastToWindows('agency:meeting-state', {
+      isRunning: false,
+      phase: 'completed',
+      percent: 100,
+      message: 'Toplantı tamamlandı.',
+    });
+  }
+}
+
+copilotService.onTriggerMeeting = async (options?: { niche?: string; keyword?: string }) => {
+  return await runStrategicDiscoveryMeetingWorkflow(options);
 };
 copilotService.onDownloadVideo = async (url: string) => {
   const ffmpegDir = path.dirname(ffmpegService.getBinaryPath());
@@ -371,8 +436,8 @@ function createDockWindow() {
 
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth } = primaryDisplay.workAreaSize;
-  const initialWidth = 440;
-  const initialHeight = 56;
+  const initialWidth = 68;
+  const initialHeight = 68;
   const initialX = Math.round((screenWidth - initialWidth) / 2);
   const initialY = 10;
 
@@ -388,7 +453,7 @@ function createDockWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     skipTaskbar: true,
     hasShadow: false,
     focusable: true,
@@ -492,17 +557,35 @@ function createWarRoomWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  createDockWindow();
+const gotTheLock = app.requestSingleInstanceLock();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-      createDockWindow();
+if (!gotTheLock) {
+  console.log('[Main] Başka bir AutoClip örneği zaten çalışıyor. Çıkılıyor...');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    if (dockWindow && !dockWindow.isDestroyed()) {
+      dockWindow.show();
     }
   });
-});
+
+  app.whenReady().then(() => {
+    createWindow();
+    createDockWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+        createDockWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -1209,61 +1292,7 @@ ipcMain.handle('agency:run-pipeline', async (_event, payload: {
 
 // 🎯 IPC Handler: Start Collaborative Strategic Discovery Meeting & Pitch Deck
 ipcMain.handle('agency:start-discovery-meeting', async (_event, payload?: { niche?: string; keyword?: string }) => {
-  const sendAgencyMessage = (msg: AgencyMessage) => {
-    broadcastToWindows('agency:message', msg);
-  };
-  const sendAgencyProgress = (p: AgencyProgressEvent) => {
-    broadcastToWindows('agency:progress', p);
-  };
-  const sendLog = (l: string) => {
-    broadcastToWindows('pipeline:log', l);
-  };
-
-  const apSettings = autopilotService.getSettings();
-  if (apSettings.brandSafetyConfig) {
-    agencyService.setBrandSafetyConfig(apSettings.brandSafetyConfig);
-  }
-  const niche = payload?.niche || apSettings.selectedNiche || 'Röportaj & Gerçek Hayat Hikayeleri';
-  const keyword = payload?.keyword || apSettings.customKeyword || undefined;
-
-  const result = await agencyService.runStrategicDiscoveryMeeting({
-    niche,
-    keyword,
-    minViewCount: apSettings.minViewCount,
-    onMessage: sendAgencyMessage,
-    onProgress: sendAgencyProgress,
-    onLog: sendLog,
-  });
-
-  // Broadcast curated candidate pitches to all windows (main + external war room)
-  broadcastToWindows('agency:pitches-ready', result.candidates);
-
-  const candidateCount = result.candidates?.length || 0;
-  copilotService.emitSpeech({
-    message: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla tamamlandı patron! Scout, Trend Hunter ve Sentinel masaya tam ${candidateCount} adet viral adayı sundu. Sonuçları incelemek için aşağıdaki butona tıkla!`,
-    mood: 'success',
-    action: {
-      label: '🎯 Viral Adayları İncele & Seç',
-      action: 'open_pitches',
-      payload: { count: candidateCount }
-    }
-  });
-
-  copilotService.emitMessage({
-    id: `asst_meeting_${Date.now()}`,
-    sender: 'assistant',
-    text: `🎯 12 Ajanlı Stratejik Keşif Toplantısı başarıyla sonuçlandı!\n\nMasadaki 12 uzman ajan ${candidateCount} adet telifsiz viral video belirledi. Sonuçları açıp dilediğin videoyu kurguya gönderebilirsin.`,
-    timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-    status: 'done',
-    actionTaken: 'meeting_completed',
-    action: {
-      label: '🎯 Viral Adayları İncele & Seç',
-      action: 'open_pitches',
-      payload: { count: candidateCount }
-    }
-  });
-
-  return result;
+  return await runStrategicDiscoveryMeetingWorkflow(payload);
 });
 
 ipcMain.handle('agency:approve-pitch', (_event, pitch: any) => {
@@ -1389,15 +1418,31 @@ ipcMain.handle('copilot:trigger-action', async (_event, action: any) => {
 // ==========================================
 // 🪟 WINDOWS DESKTOP DOCKER (NOVA TOP ISLAND)
 // ==========================================
-ipcMain.handle('dock:set-expanded', (_event, isExpanded: boolean) => {
+ipcMain.handle('dock:set-expanded', (_event, payload?: boolean | { isExpanded?: boolean; width?: number; height?: number; x?: number; y?: number }) => {
   if (!dockWindow || dockWindow.isDestroyed()) return { success: false };
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth } = primaryDisplay.workAreaSize;
 
-  const targetWidth = isExpanded ? 720 : 440;
-  const targetHeight = isExpanded ? 275 : 56;
-  const x = Math.round((screenWidth - targetWidth) / 2);
-  const y = 10;
+  let isExpanded = true;
+  let targetWidth = 740;
+  let targetHeight = 290;
+  let targetX: number | undefined = undefined;
+  let targetY: number | undefined = undefined;
+
+  if (typeof payload === 'boolean') {
+    isExpanded = payload;
+    targetWidth = isExpanded ? 740 : 68;
+    targetHeight = isExpanded ? 290 : 68;
+  } else if (typeof payload === 'object' && payload !== null) {
+    isExpanded = payload.isExpanded ?? true;
+    targetWidth = payload.width || (isExpanded ? 740 : 68);
+    targetHeight = payload.height || (isExpanded ? 290 : 68);
+    targetX = payload.x;
+    targetY = payload.y;
+  }
+
+  const x = targetX !== undefined ? Math.round(targetX) : Math.round((screenWidth - targetWidth) / 2);
+  const y = targetY !== undefined ? Math.round(targetY) : 10;
 
   dockWindow.setBounds({
     x,
@@ -1405,7 +1450,47 @@ ipcMain.handle('dock:set-expanded', (_event, isExpanded: boolean) => {
     width: targetWidth,
     height: targetHeight,
   });
-  return { success: true, isExpanded };
+  return { success: true, isExpanded, width: targetWidth, height: targetHeight, x, y };
+});
+
+ipcMain.handle('dock:set-size', (_event, { width, height, x, y }: { width: number; height: number; x?: number; y?: number }) => {
+  if (!dockWindow || dockWindow.isDestroyed()) return { success: false };
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth } = primaryDisplay.workAreaSize;
+  const targetX = x !== undefined ? Math.round(x) : Math.round((screenWidth - width) / 2);
+  const targetY = y !== undefined ? Math.round(y) : 10;
+
+  dockWindow.setBounds({
+    x: targetX,
+    y: targetY,
+    width: Math.round(width),
+    height: Math.round(height),
+  });
+  return { success: true, width, height, x: targetX, y: targetY };
+});
+
+ipcMain.handle('dock:get-bounds', () => {
+  if (!dockWindow || dockWindow.isDestroyed()) return { x: 0, y: 0, width: 86, height: 86 };
+  return dockWindow.getBounds();
+});
+
+ipcMain.handle('dock:move', (_event, { x, y }: { x: number; y: number }) => {
+  if (!dockWindow || dockWindow.isDestroyed()) return { success: false };
+  dockWindow.setPosition(Math.round(x), Math.round(y));
+  return { success: true, x: Math.round(x), y: Math.round(y) };
+});
+
+ipcMain.handle('dock:set-bounds', (_event, bounds: { x?: number; y?: number; width?: number; height?: number }) => {
+  if (!dockWindow || dockWindow.isDestroyed()) return { success: false };
+  const current = dockWindow.getBounds();
+  const next = {
+    x: bounds.x !== undefined ? Math.round(bounds.x) : current.x,
+    y: bounds.y !== undefined ? Math.round(bounds.y) : current.y,
+    width: bounds.width !== undefined ? Math.round(bounds.width) : current.width,
+    height: bounds.height !== undefined ? Math.round(bounds.height) : current.height,
+  };
+  dockWindow.setBounds(next);
+  return { success: true, ...next };
 });
 
 ipcMain.handle('dock:toggle-main-window', () => {

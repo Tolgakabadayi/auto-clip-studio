@@ -36,7 +36,9 @@ import {
   ShieldAlert,
   Plus,
   Trash2,
-  Ban
+  Ban,
+  SlidersHorizontal,
+  Activity
 } from 'lucide-react';
 import { YoutubeIcon as Youtube } from './icons/YoutubeIcon';
 import {
@@ -52,7 +54,9 @@ import {
   BrandSafetyConfig,
   DEFAULT_BRAND_SAFETY_CONFIG,
   BRAND_SAFETY_DICTIONARIES,
-  compileActiveBrandSafetyBlacklist
+  compileActiveBrandSafetyBlacklist,
+  DockerSizeConfig,
+  DEFAULT_DOCKER_SIZE_CONFIG
 } from '../types';
 import { INITIAL_OFFICE_AGENTS, AgentOfficeNode } from './AgencyRoomModal';
 import { novaVoice } from '../utils/novaVoice';
@@ -150,6 +154,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return (localStorage.getItem('autoclip_copilot_tone') as any) || 'energetic';
   });
   const [showSaveToast, setShowSaveToast] = useState(false);
+
+  // Dynamic Docker Size Configuration
+  const [dockerSize, setDockerSize] = useState<DockerSizeConfig>(() => {
+    try {
+      const raw = localStorage.getItem('autoclip_docker_size_config');
+      if (raw) return { ...DEFAULT_DOCKER_SIZE_CONFIG, ...JSON.parse(raw) };
+    } catch {}
+    return DEFAULT_DOCKER_SIZE_CONFIG;
+  });
+
+  const handleUpdateDockerSize = (updates: Partial<DockerSizeConfig>) => {
+    setDockerSize((prev) => {
+      const next = { ...prev, ...updates };
+      try {
+        localStorage.setItem('autoclip_docker_size_config', JSON.stringify(next));
+      } catch {}
+      window.dispatchEvent(new CustomEvent('autoclip_docker_size_updated', { detail: next }));
+      return next;
+    });
+  };
+
+  const handleResetDockerSize = () => {
+    setDockerSize(DEFAULT_DOCKER_SIZE_CONFIG);
+    try {
+      localStorage.setItem('autoclip_docker_size_config', JSON.stringify(DEFAULT_DOCKER_SIZE_CONFIG));
+    } catch {}
+    window.dispatchEvent(new CustomEvent('autoclip_docker_size_updated', { detail: DEFAULT_DOCKER_SIZE_CONFIG }));
+  };
 
   // YouTube Data API & Google OAuth State
   const [youtubeAuth, setYoutubeAuth] = useState<YouTubeAuthStatus | null>(null);
@@ -1611,6 +1643,151 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>🔊 Örnek Sesi Dinle</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Docker & Bot Dimensions (Boyutlandırma & Ölçekler) */}
+              <div className="p-4 rounded-2xl bg-dark-900 border border-dark-750 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      <SlidersHorizontal className="w-4 h-4 text-brand-purple" />
+                      <span>Docker & Asistan Boyutlandırma (Ölçekler)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Robot avatarının, işlem dock'unun ve açılan komuta kokpitinin boyutlarını ayrı ayrı ayarlayın.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetDockerSize}
+                    className="px-2.5 py-1 rounded-lg bg-dark-800 hover:bg-dark-750 text-slate-400 hover:text-white text-[10px] font-semibold border border-dark-700 transition-colors"
+                  >
+                    Varsayılana Sıfırla
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Slider 1: Robot Avatar Boyutu */}
+                  <div className="p-3 rounded-xl bg-dark-850 border border-dark-750 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Bot className="w-3.5 h-3.5 text-brand-cyan" />
+                        <span>Robot Avatar Boyutu (Boşta / Yüzen Mod)</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold text-brand-cyan">
+                        {dockerSize.botSize} px
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={84}
+                      step={2}
+                      value={dockerSize.botSize}
+                      onChange={(e) => handleUpdateDockerSize({ botSize: Number(e.target.value) })}
+                      className="w-full accent-cyan-400 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                      <span>40 px (Mikro)</span>
+                      <span>54 px (Önerilen - %30 Kompakt)</span>
+                      <span>84 px (Büyük)</span>
+                    </div>
+                  </div>
+
+                  {/* Slider 2: Kokpit Paneli Boyutları (Genişlik & Yükseklik) */}
+                  <div className="p-3 rounded-xl bg-dark-850 border border-dark-750 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-brand-purple" />
+                        <span>Kokpit Paneli Boyutları (Açık Mod)</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold text-brand-purple">
+                        {dockerSize.panelWidth} x {dockerSize.panelHeight} px
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                          <span>Panel Genişliği</span>
+                          <span className="font-mono text-slate-400">{dockerSize.panelWidth} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={640}
+                          max={920}
+                          step={10}
+                          value={dockerSize.panelWidth}
+                          onChange={(e) => handleUpdateDockerSize({ panelWidth: Number(e.target.value) })}
+                          className="w-full accent-purple-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                          <span>Panel Yüksekliği (Kokpit)</span>
+                          <span className="font-mono text-slate-400">{dockerSize.panelHeight} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={260}
+                          max={380}
+                          step={5}
+                          value={dockerSize.panelHeight}
+                          onChange={(e) => handleUpdateDockerSize({ panelHeight: Number(e.target.value) })}
+                          className="w-full accent-purple-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Slider 3: Canlı İşlem Dock Boyutları (Genişlik & Yükseklik) */}
+                  <div className="p-3 rounded-xl bg-dark-850 border border-dark-750 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-amber-400" />
+                        <span>İşlem Durum Çubuğu (Meşgul / İlerleme Modu)</span>
+                      </span>
+                      <span className="text-xs font-mono font-bold text-amber-400">
+                        {dockerSize.dockWidth} x {dockerSize.dockHeight} px
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                          <span>Dock Genişliği</span>
+                          <span className="font-mono text-slate-400">{dockerSize.dockWidth} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={380}
+                          max={580}
+                          step={10}
+                          value={dockerSize.dockWidth}
+                          onChange={(e) => handleUpdateDockerSize({ dockWidth: Number(e.target.value) })}
+                          className="w-full accent-amber-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[11px] text-slate-300 mb-1">
+                          <span>Dock Yüksekliği</span>
+                          <span className="font-mono text-slate-400">{dockerSize.dockHeight} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={44}
+                          max={68}
+                          step={2}
+                          value={dockerSize.dockHeight}
+                          onChange={(e) => handleUpdateDockerSize({ dockHeight: Number(e.target.value) })}
+                          className="w-full accent-amber-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

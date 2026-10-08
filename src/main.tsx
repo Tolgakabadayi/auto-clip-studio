@@ -13,6 +13,10 @@ if (isDock) {
   document.body.style.background = 'transparent';
   document.body.classList.remove('bg-dark-950');
   document.body.classList.add('bg-transparent');
+  const rootEl = document.getElementById('root');
+  if (rootEl) {
+    rootEl.style.background = 'transparent';
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

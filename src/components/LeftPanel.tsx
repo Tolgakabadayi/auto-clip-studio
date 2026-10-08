@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { VideoMetadata, PipelineProgress, PipelineStep, SubtitleStyleConfig, AutopilotState } from '../types';
 import { TerminalLogs } from './TerminalLogs';
+import { AutopilotTelemetryWidget } from './AutopilotTelemetryWidget';
 
 const YouTubeIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -1706,93 +1707,15 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       {/* ======================================================== */}
-      {/* ⚡ ALT BÖLÜM: ANİMASYONLU AJANS MASASI & OTOPİLOT KUTULARI */}
       {/* ======================================================== */}
-      <div className="shrink-0 border-t border-dark-750 bg-gradient-to-b from-dark-950 via-dark-900 to-black p-3 space-y-2 shadow-2xl relative z-10">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan animate-pulse inline-block" />
-            Otonom Ajans & Kurgu Masası
-          </span>
-          <span className="text-[9px] font-semibold text-brand-purple bg-brand-purple/15 px-2 py-0.5 rounded-full border border-brand-purple/30">
-            7/24 Aktif
-          </span>
-        </div>
-
-        {/* 2 Animated Interactive Tiles Grid */}
-        <div className="grid grid-cols-1 gap-2">
-          {/* Tile 1: 🏢 Ajans Masası (Virtual Agency Room) */}
-          <button
-            type="button"
-            onClick={onOpenAgencyRoom}
-            className="group relative overflow-hidden rounded-2xl p-3 bg-gradient-to-br from-brand-purple/15 via-dark-850 to-dark-900 border border-brand-purple/30 hover:border-brand-purple/80 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-brand-purple/20 flex items-center justify-between cursor-pointer"
-          >
-            {/* Background Ambient Glow */}
-            <div className="absolute inset-0 bg-gradient-to-r from-brand-purple/10 to-brand-cyan/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-            <div className="flex items-center space-x-3 relative z-10">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-purple to-purple-600 text-white flex items-center justify-center shadow-md shadow-brand-purple/30 group-hover:rotate-6 transition-transform">
-                <Bot className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center space-x-1.5">
-                  <h4 className="text-xs font-bold text-white group-hover:text-brand-purple transition-colors">
-                    ⚡ NEXUS WAR ROOM
-                  </h4>
-                  <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-brand-purple/20 text-brand-purple border border-brand-purple/30">
-                    14 Ajan
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                  3D Operasyon Masası • Canlı YouTube Scoreboard TV
-                </p>
-              </div>
-            </div>
-
-            <div className="relative z-10 flex items-center space-x-1 text-brand-cyan text-[10px] font-bold bg-dark-950/80 px-2 py-1 rounded-lg border border-dark-750 group-hover:border-brand-cyan/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
-              <span>Görüntüle</span>
-            </div>
-          </button>
-
-          {/* Tile 2: 🤖 7/24 Otopilot (Autopilot Radar & Queue) */}
-          <button
-            type="button"
-            onClick={onOpenAutopilot}
-            className="group relative overflow-hidden rounded-2xl p-3 bg-gradient-to-br from-amber-500/15 via-dark-850 to-dark-900 border border-amber-500/30 hover:border-amber-500/80 text-left transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-amber-500/20 flex items-center justify-between cursor-pointer"
-          >
-            {/* Background Ambient Glow */}
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-            <div className="flex items-center space-x-3 relative z-10">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 group-hover:rotate-6 transition-transform">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center space-x-1.5">
-                  <h4 className="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">
-                    🤖 7/24 Otopilot Radarı
-                  </h4>
-                  <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-full border ${
-                    autopilotState?.isRunning
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                      : 'bg-dark-800 text-slate-400 border-dark-700'
-                  }`}>
-                    {autopilotState?.isRunning ? 'AKTİF' : 'HAZIR'}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                  CC Video Avcısı • 3 Altın Yayın Saati
-                </p>
-              </div>
-            </div>
-
-            <div className="relative z-10 flex items-center space-x-1 text-amber-400 text-[10px] font-bold bg-dark-950/80 px-2 py-1 rounded-lg border border-dark-750 group-hover:border-amber-400/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
-              <span>Arşiv & Radar</span>
-            </div>
-          </button>
-        </div>
+      {/* 🤖 BOTTOM SECTION: 7/24 OTOPİLOT TELEMETRİ WİDGETI */}
+      {/* ======================================================== */}
+      <div className="shrink-0 border-t border-dark-750/80 bg-gradient-to-b from-dark-950 via-dark-900 to-black p-3 shadow-2xl relative z-10">
+        <AutopilotTelemetryWidget
+          autopilotState={autopilotState}
+          pipelineProgress={pipelineProgress}
+          onOpenAutopilot={onOpenAutopilot}
+        />
       </div>
     </aside>
   );

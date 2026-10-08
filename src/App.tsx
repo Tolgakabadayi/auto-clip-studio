@@ -11,7 +11,6 @@ import { AgencyRoomModal } from './components/AgencyRoomModal';
 import { AutopilotModal } from './components/AutopilotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { OperationSummaryModal, LatestOperationResult } from './components/OperationSummaryModal';
-import { CopilotWidget } from './components/CopilotWidget';
 import {
   VideoMetadata,
   ViralClip,
@@ -206,6 +205,38 @@ export const App: React.FC = () => {
         });
       });
 
+      const unregisterAgencyProgress = window.electronAPI.onAgencyProgress?.((p: any) => {
+        if (p) {
+          setPipelineProgress({
+            step: p.phase || 'agency_meeting',
+            percent: p.percent || 10,
+            message: p.message || '',
+          });
+          if (p.percent < 100) {
+            setIsProcessing(true);
+          } else {
+            setIsProcessing(false);
+          }
+        }
+      });
+
+      const unregisterAgencyMeetingState = window.electronAPI.onAgencyMeetingState?.((st: any) => {
+        if (st) {
+          setIsProcessing(!!st.isRunning);
+          if (st.isRunning) {
+            setPipelineProgress({
+              step: st.phase || 'agency_meeting',
+              percent: st.percent || 10,
+              message: st.message || '14 Ajanlı Stratejik Keşif Toplantısı sürüyor...',
+            });
+          }
+        }
+      });
+
+      const unregisterPitchesReady = window.electronAPI.onAgencyPitchesReady?.(() => {
+        setIsProcessing(false);
+      });
+
       const unregisterAutopilot = window.electronAPI.onAutopilotState?.((s) => {
         setAutopilotState(s);
       });
@@ -296,6 +327,9 @@ export const App: React.FC = () => {
         unregisterProgress();
         unregisterLog();
         if (unregisterAgencyMsg) unregisterAgencyMsg();
+        if (unregisterAgencyProgress) unregisterAgencyProgress();
+        if (unregisterAgencyMeetingState) unregisterAgencyMeetingState();
+        if (unregisterPitchesReady) unregisterPitchesReady();
         if (unregisterAutopilot) unregisterAutopilot();
         if (unregisterDock) unregisterDock();
         if (unregisterCopilotModal) unregisterCopilotModal();
@@ -943,25 +977,6 @@ export const App: React.FC = () => {
         onPreviewClip={(clip) => setPreviewClip(clip)}
       />
 
-      {/* 🤖 Interactive Copilot AI Robot Assistant (NOVA) */}
-      <CopilotWidget
-        pipelineProgress={pipelineProgress}
-        autopilotState={autopilotState}
-        agencyMessages={agencyMessages}
-        onOpenAgencyRoom={() => {
-          setAgencyInitialShowPitchDeck(false);
-          setIsAgencyModalOpen(true);
-        }}
-        onOpenPitches={() => {
-          setAgencyInitialShowPitchDeck(true);
-          setIsAgencyModalOpen(true);
-        }}
-        onOpenAutopilot={() => setIsAutopilotModalOpen(true)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onResetError={handleClearTerminalAndAgency}
-        onStartDiscoveryMeeting={handleRunAgencyBrainstorm}
-        onDownloadYouTube={(url) => handleDownloadYouTube(url, false)}
-      />
     </div>
   );
 };

@@ -61,6 +61,20 @@ export const WarRoomStandalone: React.FC = () => {
       setIsProcessing(state?.isBusy || false);
     });
 
+    // Live Meeting State
+    const unsubMeetingState = window.electronAPI.onAgencyMeetingState?.((st: any) => {
+      if (st) {
+        setIsProcessing(!!st.isRunning);
+        if (st.isRunning) {
+          setPipelineProgress({
+            step: st.phase || 'agency_meeting',
+            percent: st.percent || 10,
+            message: st.message || '',
+          });
+        }
+      }
+    });
+
     // Fetch system health
     window.electronAPI.getSystemHealth?.().then((h: any) => {
       if (h) setSystemHealth(h);
@@ -70,6 +84,7 @@ export const WarRoomStandalone: React.FC = () => {
       unsubMsg?.();
       unsubProg?.();
       unsubAp?.();
+      unsubMeetingState?.();
     };
   }, []);
 
